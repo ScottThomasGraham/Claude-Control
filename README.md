@@ -4,6 +4,14 @@
 
 ---
 
+> ### 🚦 Picking this up in a fresh session? **Read [`docs/STATUS.md`](docs/STATUS.md) first.**
+> It records exactly where we are and the precise next steps. **Current state (2026-05-30):** the
+> tool is built, working, and pushed (17 MCP tools); we're one step from the first live run —
+> waiting on test PC **SGRAHAM-MINI** to finish enabling OpenSSH, then connect + validate. The one
+> outstanding input is the Windows **username** for that box.
+
+---
+
 ## Overview
 
 This is the desktop-control counterpart to **Claude-Browser**. Where Claude-Browser lets an AI drive
