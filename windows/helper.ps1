@@ -68,6 +68,37 @@ public class CCInput {
         var u=new INPUT(); u.type=INPUT_KEYBOARD; u.U.ki.wScan=c; u.U.ki.dwFlags=KEYEVENTF_UNICODE|KEYEVENTF_KEYUP;
         Send(new INPUT[]{d,u});
     }
+
+    // --- window management (for heavy multi-window apps) ---
+    public struct RECT { public int Left, Top, Right, Bottom; }
+    delegate bool EnumProc(IntPtr h, IntPtr l);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr l);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")] static extern int GetWindowTextLength(IntPtr h);
+    [DllImport("user32.dll", CharSet=CharSet.Auto)] static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n);
+    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int n);
+
+    static string TitleOf(IntPtr h){ int n=GetWindowTextLength(h); if(n<=0) return ""; var sb=new System.Text.StringBuilder(n+1); GetWindowText(h,sb,sb.Capacity); return sb.ToString(); }
+
+    public static System.Collections.Generic.List<object[]> ListWindows(){
+        var list = new System.Collections.Generic.List<object[]>();
+        EnumWindows((h,l)=>{
+            if(IsWindowVisible(h)){ string t=TitleOf(h); if(t.Length>0){ RECT r; GetWindowRect(h, out r); list.Add(new object[]{ t, r.Left, r.Top, r.Right-r.Left, r.Bottom-r.Top }); } }
+            return true;
+        }, IntPtr.Zero);
+        return list;
+    }
+    public static bool Focus(string sub){
+        IntPtr found = IntPtr.Zero; string lower = sub.ToLower();
+        EnumWindows((h,l)=>{
+            if(IsWindowVisible(h)){ string t=TitleOf(h); if(t.Length>0 && t.ToLower().Contains(lower)){ found=h; return false; } }
+            return true;
+        }, IntPtr.Zero);
+        if(found != IntPtr.Zero){ ShowWindow(found, 9); SetForegroundWindow(found); return true; }
+        return false;
+    }
 }
 '@
 
@@ -129,6 +160,35 @@ function Invoke-Keys($chord) {
   @{ok=$true; chord=$chord}
 }
 
+function Invoke-ListWindows {
+  $vs = Get-VirtualScreen
+  $arr = New-Object System.Collections.ArrayList
+  foreach ($w in [CCInput]::ListWindows()) {
+    [void]$arr.Add(@{ title=$w[0]; x=[int]($w[1]-$vs.X); y=[int]($w[2]-$vs.Y); w=[int]$w[3]; h=[int]$w[4] })
+  }
+  @{ ok=$true; windows=$arr }
+}
+
+function Invoke-FocusWindow($title) { @{ ok=$true; found=[CCInput]::Focus([string]$title) } }
+
+function Invoke-WaitIdle($timeoutMs, $settleMs) {
+  if (-not $timeoutMs) { $timeoutMs = 60000 }
+  if (-not $settleMs)  { $settleMs  = 1500 }
+  $md5 = [System.Security.Cryptography.MD5]::Create()
+  $sw  = [System.Diagnostics.Stopwatch]::StartNew()
+  $last = $null; $stableSince = $null
+  while ($sw.ElapsedMilliseconds -lt $timeoutMs) {
+    $shot  = Invoke-Screenshot
+    $hash  = [BitConverter]::ToString($md5.ComputeHash([Convert]::FromBase64String($shot.png)))
+    if ($hash -eq $last) {
+      if ($stableSince -eq $null) { $stableSince = $sw.ElapsedMilliseconds }
+      elseif (($sw.ElapsedMilliseconds - $stableSince) -ge $settleMs) { return @{ ok=$true; idle=$true } }
+    } else { $last = $hash; $stableSince = $null }
+    Start-Sleep -Milliseconds 400
+  }
+  @{ ok=$true; idle=$false }
+}
+
 function Get-Elements([int]$max, [string]$nameFilter) {
   $vs = Get-VirtualScreen
   $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
@@ -175,6 +235,9 @@ function Handle([string]$line) {
     'keys'       { Invoke-Keys $cmd.chord }
     'uia_tree'   { @{ ok=$true; elements = (Get-Elements ([int]$cmd.maxElements) $null) } }
     'uia_find'   { @{ ok=$true; matches  = (Get-Elements 1000 ([string]$cmd.text)) } }
+    'list_windows' { Invoke-ListWindows }
+    'focus_window' { Invoke-FocusWindow $cmd.title }
+    'wait_idle'    { Invoke-WaitIdle $cmd.timeoutMs $cmd.settleMs }
     default      { @{ ok=$false; error="unknown op '$($cmd.op)'" } }
   }
 }

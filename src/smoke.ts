@@ -7,7 +7,7 @@ import { buildServer } from "./server.js";
 const EXPECTED = [
   "connect", "status", "run", "upload", "download",
   "screenshot", "click", "move", "scroll", "type_text", "press_keys",
-  "ui_tree", "ui_find", "bootstrap",
+  "ui_tree", "ui_find", "list_windows", "focus_window", "wait_idle", "bootstrap",
 ];
 
 const server = buildServer();

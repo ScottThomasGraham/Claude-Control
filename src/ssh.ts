@@ -95,6 +95,19 @@ export function runPowerShell(script: string, opts: ExecOpts = {}): Promise<Exec
   return sshExec(`powershell -NoProfile -NonInteractive -EncodedCommand ${psEncode(script)}`, opts);
 }
 
+/**
+ * Run a command using the target OS's native shell. On Windows this is
+ * PowerShell (-EncodedCommand); on macOS we base64 the script and pipe it to
+ * `sh` so quoting/newlines survive the SSH boundary.
+ */
+export function runRemote(script: string, opts: ExecOpts = {}): Promise<ExecResult> {
+  if (config.os === "macos") {
+    const b64 = Buffer.from(script, "utf8").toString("base64");
+    return sshExec(`echo ${b64} | base64 -d | /bin/sh`, opts);
+  }
+  return runPowerShell(script, opts);
+}
+
 export function scpUpload(localPath: string, remotePath: string): Promise<ExecResult> {
   const { host, user } = requireTarget();
   const args = [
