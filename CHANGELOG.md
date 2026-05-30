@@ -4,6 +4,16 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project will adopt
 [Semantic Versioning](https://semver.org/) once it ships releases.
 
+## [Unreleased]
+
+### Added
+- **Cross-platform targets:** `connect` takes an `os` (`windows`/`macos`); `run` uses PowerShell on
+  Windows and `/bin/sh` on macOS. macOS supports run/upload/download + `screenshot` (via
+  `screencapture`); input and AX-tree return a clear notice pending validation on a Mac target.
+- **Windows GUI-driving tools** for heavy apps (TIA Portal, Studio 5000): `list_windows`,
+  `focus_window` (by title), and `wait_idle` (block until the screen stops changing — e.g. after a
+  compile/download). Backed by new helper ops (EnumWindows / SetForegroundWindow / frame-hash idle).
+
 ## [0.1.0] — 2026-05-30
 
 First working implementation, shipped as an **MCP server** for Claude Code.

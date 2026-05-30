@@ -7,8 +7,14 @@
 ## Overview
 
 This is the desktop-control counterpart to **Claude-Browser**. Where Claude-Browser lets an AI drive
-a web browser, **Claude-Control lets Claude Code fully operate a remote Windows PC** — run commands,
+a web browser, **Claude-Control lets Claude Code fully operate a remote computer** — run commands,
 see the screen, click, type, and read the on-screen UI — like sitting at the machine.
+
+It's built for the hard case: **GUI software that can't be scripted** — e.g. Siemens **TIA Portal**
+or Rockwell **Studio 5000**. There's no API to call, so you operate the interface: screenshot to
+see, the UI Automation tree for a semantic map of those dense engineering windows, and click/type to
+work. Targets can be **Windows** (full visual + UI Automation) or **macOS** (run/files + screenshot
+today; input/AX-tree landing once validated on a Mac target).
 
 It ships as an **MCP server**, so it attaches to *anyone's* local Claude Code in one line. And it
 leans entirely on **OS-preinstalled tools**: the `ssh`/`scp` already on your Mac, and **OpenSSH +
@@ -101,17 +107,21 @@ Then, from Claude Code, ask it to **`bootstrap`** the host once — that install
 
 | Tool | What it does |
 |---|---|
-| `connect` | Set the active Windows host + verify SSH (keys only). |
+| `connect` | Set the active host + OS (`windows`/`macos`) + verify SSH (keys only). |
 | `status` | Show the target and whether the visual helper is live. |
-| `run` | Run PowerShell; returns stdout/stderr/exit. |
+| `run` | Run a command (PowerShell on Windows, sh on macOS); returns stdout/stderr/exit. |
 | `upload` / `download` | Copy files via scp. |
 | `screenshot` | PNG of the live desktop (returned as an image). |
 | `click` / `move` / `scroll` | Mouse control at pixel coordinates. |
 | `type_text` / `press_keys` | Keyboard: text and chords (`Ctrl+S`, `Alt+Tab`, `Win+R`). |
-| `ui_tree` / `ui_find` | Windows UI Automation elements with click-ready coordinates. |
+| `ui_tree` / `ui_find` | UI Automation elements with click-ready coordinates. |
+| `list_windows` / `focus_window` | Orient and switch between windows in big multi-window apps. |
+| `wait_idle` | Block until the screen stops changing — e.g. after a TIA compile/download. |
 | `bootstrap` | Install the interactive-session helper (logon task) + optionally enable RDP. |
 
-Coordinates are consistent everywhere: `ui_tree` centers feed straight into `click`.
+Coordinates are consistent everywhere: `ui_tree` centers feed straight into `click`. The visual,
+`ui_*`, and window tools are Windows-first; on macOS, `run`/`upload`/`download`/`screenshot` work
+today and the rest return a clear notice until validated on a Mac target.
 
 ---
 

@@ -14,14 +14,19 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { config, setTarget, requireTarget } from "./config.js";
+import { config, setTarget, requireTarget, type TargetOs } from "./config.js";
 import {
   sshExec,
   runPowerShell,
+  runRemote,
   helperCall,
   scpUpload,
   type ExecResult,
 } from "./ssh.js";
+import {
+  vScreenshot, vMove, vClick, vScroll, vType, vKeys, vUiTree, vUiFind,
+  vListWindows, vFocusWindow, vWaitIdle,
+} from "./visual.js";
 
 const WINDOWS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "windows");
 const REMOTE_DIR = "C:/ProgramData/ClaudeControl";
@@ -63,20 +68,22 @@ export function buildServer(): McpServer {
         "OS ssh keys / ssh-agent — no password is ever sent or stored. Run `bootstrap` once per " +
         "machine to enable visual control.",
       inputSchema: {
-        host: z.string().describe("Hostname or IP of the Windows PC"),
-        user: z.string().describe("Windows username to log in as"),
+        host: z.string().describe("Hostname or IP of the target"),
+        user: z.string().describe("Username to log in as"),
+        os: z.enum(["windows", "macos"]).optional().describe("Target OS (default windows)"),
         port: z.number().int().optional().describe("SSH port (default 22)"),
         identityFile: z.string().optional().describe("Path to a private key file (optional; uses ssh-agent otherwise)"),
-        helperPort: z.number().int().optional().describe("Loopback port the visual helper listens on (default 49705)"),
+        helperPort: z.number().int().optional().describe("Loopback port the Windows visual helper listens on (default 49705)"),
       },
     },
-    tool(async (a: { host: string; user: string; port?: number; identityFile?: string; helperPort?: number }) => {
+    tool(async (a: { host: string; user: string; os?: TargetOs; port?: number; identityFile?: string; helperPort?: number }) => {
       setTarget(a);
-      const r = await runPowerShell("$env:COMPUTERNAME; [Environment]::OSVersion.VersionString", {
-        timeoutMs: 20_000,
-      });
-      if (r.code !== 0) return fail(`Connected config saved, but SSH check failed:\n${runResultText(r)}`);
-      return text(`Connected to ${a.user}@${a.host}:${a.port ?? config.port}\n${r.stdout.trim()}`);
+      const probe = config.os === "macos"
+        ? "hostname; uname -sr; sw_vers 2>/dev/null | tr '\\n' ' '"
+        : "$env:COMPUTERNAME; [Environment]::OSVersion.VersionString";
+      const r = await runRemote(probe, { timeoutMs: 20_000 });
+      if (r.code !== 0) return fail(`Config saved, but SSH check failed:\n${runResultText(r)}`);
+      return text(`Connected to ${a.user}@${a.host}:${a.port ?? config.port} (${config.os})\n${r.stdout.trim()}`);
     }),
   );
 
@@ -109,15 +116,15 @@ export function buildServer(): McpServer {
   server.registerTool(
     "run",
     {
-      title: "Run a PowerShell command",
-      description: "Execute PowerShell on the target and return stdout/stderr/exit code. Headless — works without the visual helper.",
+      title: "Run a shell command",
+      description: "Execute a command on the target (PowerShell on Windows, /bin/sh on macOS) and return stdout/stderr/exit code. Headless — no visual helper needed.",
       inputSchema: {
-        command: z.string().describe("PowerShell to execute"),
+        command: z.string().describe("Command to execute (PowerShell on Windows, sh on macOS)"),
         timeoutMs: z.number().int().optional().describe("Timeout in ms (default 30000)"),
       },
     },
     tool(async (a: { command: string; timeoutMs?: number }) => {
-      const r = await runPowerShell(a.command, { timeoutMs: a.timeoutMs ?? 30_000 });
+      const r = await runRemote(a.command, { timeoutMs: a.timeoutMs ?? 30_000 });
       return r.code === 0 ? text(runResultText(r)) : fail(runResultText(r));
     }),
   );
@@ -157,16 +164,15 @@ export function buildServer(): McpServer {
     "screenshot",
     {
       title: "Capture the remote desktop",
-      description: "Return a PNG screenshot of the interactive Windows desktop. Requires the helper (run `bootstrap` once).",
+      description: "Return a PNG screenshot of the interactive desktop (Windows: via the helper — run `bootstrap` once; macOS: via screencapture — needs Screen Recording permission).",
       inputSchema: {},
     },
     tool(async () => {
-      const r = await helperCall({ op: "screenshot" }, { timeoutMs: 30_000 });
-      if (!r?.png) return fail("Helper returned no image.");
+      const shot = await vScreenshot();
       return {
         content: [
-          { type: "text", text: `Screenshot ${r.width ?? "?"}x${r.height ?? "?"}` },
-          { type: "image", data: r.png, mimeType: "image/png" },
+          { type: "text", text: `Screenshot ${shot.width ?? "?"}x${shot.height ?? "?"}` },
+          { type: "image", data: shot.png, mimeType: "image/png" },
         ],
       };
     }),
@@ -185,7 +191,7 @@ export function buildServer(): McpServer {
       },
     },
     tool(async (a: { x: number; y: number; button?: string; double?: boolean }) => {
-      await helperCall({ op: "click", x: a.x, y: a.y, button: a.button ?? "left", double: !!a.double });
+      await vClick(a.x, a.y, a.button ?? "left", !!a.double);
       return text(`Clicked ${a.button ?? "left"}${a.double ? " (double)" : ""} at (${a.x}, ${a.y})`);
     }),
   );
@@ -198,7 +204,7 @@ export function buildServer(): McpServer {
       inputSchema: { x: z.number().int(), y: z.number().int() },
     },
     tool(async (a: { x: number; y: number }) => {
-      await helperCall({ op: "move", x: a.x, y: a.y });
+      await vMove(a.x, a.y);
       return text(`Moved to (${a.x}, ${a.y})`);
     }),
   );
@@ -211,7 +217,7 @@ export function buildServer(): McpServer {
       inputSchema: { amount: z.number().int().describe("Notches; positive up, negative down") },
     },
     tool(async (a: { amount: number }) => {
-      await helperCall({ op: "scroll", amount: a.amount });
+      await vScroll(a.amount);
       return text(`Scrolled ${a.amount}`);
     }),
   );
@@ -224,7 +230,7 @@ export function buildServer(): McpServer {
       inputSchema: { text: z.string() },
     },
     tool(async (a: { text: string }) => {
-      await helperCall({ op: "type", text: a.text }, { timeoutMs: 30_000 });
+      await vType(a.text);
       return text(`Typed ${a.text.length} chars`);
     }),
   );
@@ -237,7 +243,7 @@ export function buildServer(): McpServer {
       inputSchema: { keys: z.string() },
     },
     tool(async (a: { keys: string }) => {
-      await helperCall({ op: "keys", chord: a.keys });
+      await vKeys(a.keys);
       return text(`Pressed ${a.keys}`);
     }),
   );
@@ -254,8 +260,8 @@ export function buildServer(): McpServer {
       },
     },
     tool(async (a: { maxElements?: number }) => {
-      const r = await helperCall({ op: "uia_tree", maxElements: a.maxElements ?? 200 }, { timeoutMs: 30_000 });
-      return text(JSON.stringify(r.elements ?? r, null, 2));
+      const els = await vUiTree(a.maxElements ?? 200);
+      return text(JSON.stringify(els, null, 2));
     }),
   );
 
@@ -267,8 +273,48 @@ export function buildServer(): McpServer {
       inputSchema: { text: z.string() },
     },
     tool(async (a: { text: string }) => {
-      const r = await helperCall({ op: "uia_find", text: a.text }, { timeoutMs: 30_000 });
-      return text(JSON.stringify(r.matches ?? r, null, 2));
+      const matches = await vUiFind(a.text);
+      return text(JSON.stringify(matches, null, 2));
+    }),
+  );
+
+  // ---- Windows GUI driving (heavy apps: TIA Portal, Studio 5000) ---------
+  server.registerTool(
+    "list_windows",
+    {
+      title: "List open windows",
+      description: "List visible top-level windows with titles and positions — useful to orient inside multi-window apps like TIA Portal / Studio 5000. (Windows only.)",
+      inputSchema: {},
+    },
+    tool(async () => text(JSON.stringify(await vListWindows(), null, 2))),
+  );
+
+  server.registerTool(
+    "focus_window",
+    {
+      title: "Focus a window by title",
+      description: "Bring the first visible window whose title contains the given text to the foreground (restoring it if minimized). (Windows only.)",
+      inputSchema: { title: z.string().describe("Substring of the window title, e.g. 'TIA Portal' or 'Studio 5000'") },
+    },
+    tool(async (a: { title: string }) => {
+      const found = await vFocusWindow(a.title);
+      return found ? text(`Focused window matching "${a.title}"`) : fail(`No visible window matching "${a.title}"`);
+    }),
+  );
+
+  server.registerTool(
+    "wait_idle",
+    {
+      title: "Wait for the screen to stop changing",
+      description: "Block until the desktop image is stable for `settleMs` (or until `timeoutMs`). Use after triggering a compile/download/load in TIA Portal or Studio 5000. (Windows only.)",
+      inputSchema: {
+        timeoutMs: z.number().int().optional().describe("Give up after this long (default 60000)"),
+        settleMs: z.number().int().optional().describe("Screen must be unchanged this long to count as idle (default 1500)"),
+      },
+    },
+    tool(async (a: { timeoutMs?: number; settleMs?: number }) => {
+      const idle = await vWaitIdle(a.timeoutMs ?? 60_000, a.settleMs ?? 1_500);
+      return idle ? text("Screen is idle.") : text("Timed out before the screen settled.");
     }),
   );
 
