@@ -1,0 +1,18 @@
+# Rust
+/target
+**/target
+Cargo.lock          # library-style; keep if this becomes a shipped binary workspace
+*.pdb
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Local secrets / scratch (never commit)
+*.pem
+*.key
+.env
+.env.*
+/scratch
