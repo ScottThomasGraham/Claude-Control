@@ -1,5 +1,12 @@
 # Claude-Control — Design Spec
 
+> **⚠️ Superseded mechanism (2026-05-30):** the *implementation approach* below (embedding IronRDP +
+> a compiled Rust agent) was replaced by a simpler, more OS-native design: **drive Windows over SSH
+> with PowerShell, shipped as an MCP server.** The goals, tri-channel model, session-0 insight, and
+> security posture all carry over. See
+> [`docs/architecture/implemented-architecture.md`](../../architecture/implemented-architecture.md)
+> for the shipped design. This document is retained for design history.
+
 **Date:** 2026-05-30
 **Status:** Design complete, pending owner review (owner stepped away; will review on return)
 **Repo:** `Claude-Control` (binary working name: `ctl`; product name provisional)
