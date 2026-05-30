@@ -1,87 +1,135 @@
 <h1 align="center">Claude-Control</h1>
 
-<p align="center"><em>Full agentic control of a remote Windows desktop — over Microsoft's native protocols.</em></p>
+<p align="center"><em>Give Claude Code hands on a remote Windows PC — over SSH, using only what Windows already ships.</em></p>
 
 ---
 
 ## Overview
 
 This is the desktop-control counterpart to **Claude-Browser**. Where Claude-Browser lets an AI drive
-a web browser, **Claude-Control lets an AI fully operate a remote Windows PC** — like RDP/MSTSC, but
-built so the agent itself can see the screen and click, type, and run commands, end to end.
+a web browser, **Claude-Control lets Claude Code fully operate a remote Windows PC** — run commands,
+see the screen, click, type, and read the on-screen UI — like sitting at the machine.
 
-The design rests on a simple idea: **use the cheapest channel that can do the job.**
+It ships as an **MCP server**, so it attaches to *anyone's* local Claude Code in one line. And it
+leans entirely on **OS-preinstalled tools**: the `ssh`/`scp` already on your Mac, and **OpenSSH +
+PowerShell + .NET** already on Windows. **Nothing is compiled or installed on the target** — no agent
+binary, no drivers, no RDP stack to maintain. The "agent" that sees and clicks is a PowerShell script
+that uses Windows' own screen-capture, input, and UI Automation APIs.
 
-- **SSH (fast path)** — run PowerShell, scripts, and file transfers headlessly. No pixels needed for
-  most automation. This is also how the app **silently deploys its own helper agent**.
-- **RDP (visual path)** — stream the live desktop and inject mouse/keyboard, exactly when a task
-  needs eyes and clicks. Watch it in a live viewer and grab control yourself anytime.
-- **UIA agent (semantic upgrade)** — a tiny helper the app **auto-pushes** to machines you own,
-  exposing Windows' UI Automation tree so the agent gets a precise, clickable map of every on-screen
-  control — the same superpower the browser's accessibility tree gives Claude-Browser.
+The design principle: **use the cheapest channel that does the job.**
 
-The goal is a tool that is **reliable, distributable, and clean** — professional enough to install
-with `brew install`, signed and notarized, with a one-step setup on a fresh PC and a spotless
-uninstall.
-
-> **Status:** Design + research phase. This repository currently holds the **specification, sourced
-> feasibility research, and implementation plan** for review. No application code has been written
-> yet — implementation begins after the design is approved.
+- **Headless (SSH + PowerShell):** run commands, move files, manage the box — instant, scriptable, no
+  GUI needed. This is most of the work.
+- **Visual (the helper):** when a task needs eyes and clicks, a tiny PowerShell helper running in the
+  desktop session returns **screenshots** and performs **mouse/keyboard** input.
+- **Semantic (UI Automation):** instead of guessing from pixels, ask Windows for the **element tree**
+  — every control's type, name, and click-ready coordinates.
 
 ---
 
-## How it works (at a glance)
+## How it works
 
 ```
-  macOS (your Mac)                                           Windows PC (yours or any host)
- ┌───────────────────────────┐        SSH 22         ┌──────────────────────────────┐
- │  ctl  (one Rust binary)   │──── commands · files ──▶│  OpenSSH ─ pushes/installs ──┐ │
- │   • SSH fast path (russh) │        RDP 3389        │                              ▼ │
- │   • RDP visual (IronRDP)  │──── screen · clicks ───▶│  Windows desktop      UIA agent│
- │   • OCR (Apple Vision)    │   loopback over SSH    │                       (logon    │
- │   • live web viewer       │◀─── UIA element map ───│                        task)    │
- └───────────────────────────┘                        └──────────────────────────────┘
+   Your Mac (Claude Code)                          Windows PC (e.g. SGRAHAM-MINI)
+ ┌─────────────────────────┐      SSH (OpenSSH)   ┌────────────────────────────────┐
+ │  claude-control (MCP)   │───── powershell ─────▶│  PowerShell + .NET             │
+ │   • run / upload / ...  │      scp files        │   • commands, files            │
+ │   • screenshot / click  │                       │                                │
+ │   • type / press_keys   │   helper (loopback,   │  helper.ps1 (logon task,       │
+ │   • ui_tree / ui_find   │◀── relayed over SSH ──│   interactive session):        │
+ │                         │                       │   screen capture · SendInput · │
+ └─────────────────────────┘                       │   UI Automation tree           │
+                                                    └────────────────────────────────┘
 ```
 
-One channel enabled by hand once on a fresh PC; `ctl bootstrap <host>` does everything else —
-enables the other channel, provisions a key, and rolls out the helper agent.
+Authentication is your **OS ssh keys** — no password is ever sent or stored. The helper binds
+**loopback only** and is reached *through* the SSH connection, so nothing new is exposed on the
+network.
 
 ---
 
-## Repository map
+## Install
 
-| Path | What's there |
+**1. Build (or install) the server.**
+
+```bash
+git clone https://github.com/ScottThomasGraham/Claude-Control.git
+cd Claude-Control && npm install && npm run build
+```
+
+**2. Attach it to Claude Code.**
+
+```bash
+claude mcp add claude-control -- node /absolute/path/to/Claude-Control/build/index.js
+# (once published to npm:  claude mcp add claude-control -- npx -y claude-control-mcp )
+```
+
+Optionally pre-set a default target so Claude can connect immediately:
+
+```bash
+claude mcp add claude-control \
+  --env CLAUDE_CONTROL_HOST=sgraham-mini \
+  --env CLAUDE_CONTROL_USER=<windows-user> \
+  --env CLAUDE_CONTROL_IDENTITY=$HOME/.ssh/claude-control_ed25519 \
+  -- node /absolute/path/to/Claude-Control/build/index.js
+```
+
+**3. One-time setup on the Windows PC** (the only manual step — it's the security boundary that lets
+the tool in). In an **elevated PowerShell** on the target, enable OpenSSH and authorize your key:
+
+```powershell
+# Enable OpenSSH Server
+Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+Set-Service sshd -StartupType Automatic; Start-Service sshd
+New-NetFirewallRule -Name sshd -DisplayName 'OpenSSH Server' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 -ErrorAction SilentlyContinue
+# Default shell = PowerShell
+New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -PropertyType String -Force | Out-Null
+# Authorize your Claude-Control public key (admin accounts use this shared file)
+$pub = '<PASTE YOUR ~/.ssh/claude-control_ed25519.pub HERE>'
+$f = "$env:ProgramData\ssh\administrators_authorized_keys"
+Add-Content -Path $f -Value $pub
+icacls.exe $f /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F" | Out-Null
+"username: $env:USERNAME"
+```
+
+Then, from Claude Code, ask it to **`bootstrap`** the host once — that installs the visual helper
+(screenshot/click/UIA) into your desktop session. After that, everything is automatic.
+
+---
+
+## Tools
+
+| Tool | What it does |
 |---|---|
-| [`docs/superpowers/specs/`](docs/superpowers/specs/) | **The design spec** — architecture, channels, security model, phases |
-| [`docs/superpowers/plans/`](docs/superpowers/plans/) | **Implementation roadmap** + the detailed **Phase 1** plan |
-| [`docs/research/`](docs/research/) | **Sourced feasibility research** (IronRDP, Windows SSH, UIA agent, distribution, OCR) |
-| `crates/` | Rust workspace (`protocol`, `controller`, `agent`) — _created when implementation starts_ |
+| `connect` | Set the active Windows host + verify SSH (keys only). |
+| `status` | Show the target and whether the visual helper is live. |
+| `run` | Run PowerShell; returns stdout/stderr/exit. |
+| `upload` / `download` | Copy files via scp. |
+| `screenshot` | PNG of the live desktop (returned as an image). |
+| `click` / `move` / `scroll` | Mouse control at pixel coordinates. |
+| `type_text` / `press_keys` | Keyboard: text and chords (`Ctrl+S`, `Alt+Tab`, `Win+R`). |
+| `ui_tree` / `ui_find` | Windows UI Automation elements with click-ready coordinates. |
+| `bootstrap` | Install the interactive-session helper (logon task) + optionally enable RDP. |
 
-**Start here:** the [design spec](docs/superpowers/specs/2026-05-30-claude-control-design.md), then
-the [roadmap](docs/superpowers/plans/2026-05-30-claude-control-roadmap.md).
-
----
-
-## Planned tech stack
-
-Rust (Tokio) · [IronRDP](https://github.com/Devolutions/IronRDP) (RDP) ·
-[`russh`](https://github.com/Eugeny/russh) (SSH) · `objc2-vision` + [`ocrs`](https://github.com/robertknight/ocrs)
-(OCR) · [`windows-rs`](https://github.com/microsoft/windows-rs) (UIA agent) ·
-[`cargo-dist`](https://github.com/axodotdev/cargo-dist) (releases). Dual-licensed **MIT OR
-Apache-2.0**.
+Coordinates are consistent everywhere: `ui_tree` centers feed straight into `click`.
 
 ---
 
-## Security posture (by design)
+## Security
 
-Secrets never touch disk (env/Keychain only) · RDP over NLA/CredSSP+TLS · the helper agent binds
-**loopback only**, reached through the SSH tunnel · explicit certificate trust · full audit log of
-every command and input · agent rollout only to hosts you explicitly bootstrap · clean uninstall.
-See the spec's [security & threat model](docs/superpowers/specs/2026-05-30-claude-control-design.md#8-security--threat-model).
+OS ssh keys only — no passwords sent or stored · helper binds loopback and is reached through SSH ·
+the helper runs at the user's privilege level; only `bootstrap` needs admin · `bootstrap -Uninstall`
+removes the task, helper, and files cleanly · the target runs only Microsoft-shipped code.
 
 ---
+
+## Project docs
+
+Design history and the original (pre-pivot) Rust/RDP exploration live under
+[`docs/`](docs/) — see [`docs/architecture/implemented-architecture.md`](docs/architecture/implemented-architecture.md)
+for why the shipped design is SSH + PowerShell rather than a hand-rolled RDP client, and
+[`docs/research/`](docs/research/) for the sourced feasibility research that informed it.
 
 ## License
 
-Licensed under either of [Apache License 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT) at your
-option.
+Dual-licensed under [Apache-2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT), at your option.

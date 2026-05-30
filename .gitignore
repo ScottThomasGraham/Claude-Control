@@ -1,7 +1,10 @@
-# Rust
+# Node
+/node_modules
+/build
+
+# Rust (original design exploration; kept for reference)
 /target
 **/target
-Cargo.lock          # library-style; keep if this becomes a shipped binary workspace
 *.pdb
 
 # OS / editor
