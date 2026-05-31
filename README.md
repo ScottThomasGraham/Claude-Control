@@ -6,10 +6,41 @@
 
 > ### ✅ Status: working & validated end-to-end (2026-05-31)
 > 17-tool MCP server, validated on a live Windows 11 Pro target over Tailscale — connect → bootstrap →
-> screenshot → read the UI tree → click → type, plus driving a real GUI app (opened Word and typed a
-> document). See **[Quick start](#quick-start-fresh-machine)** below to set it up from scratch, and
-> [`docs/STATUS.md`](docs/STATUS.md) for the full build/validation history. macOS targets support
+> screenshot → read the UI tree → click → type, plus driving real GUI apps (opened Word, and
+> downloaded + installed + launched Siemens TIA Portal V21 across two reboots). macOS targets support
 > run/upload/download/screenshot today; input + AX-tree are pending a Mac target.
+
+---
+
+## Get started (2 steps)
+
+**On your Mac** — clone and run the guided setup:
+
+```bash
+git clone https://github.com/ScottThomasGraham/Claude-Control.git
+cd Claude-Control && npm install && npm run build
+node scripts/setup.mjs            # generates a key + prints ONE command to paste on Windows
+```
+
+Or, inside a Claude Code session opened on this repo, just run the bundled command:
+
+```
+/claude-control-setup
+```
+
+…and Claude walks you through it.
+
+**On the Windows machine you want to control** — paste the single line `setup.mjs` printed into an
+**elevated** PowerShell (Run as administrator) and run it. It enables SSH, authorizes your key, and
+opens the firewall, then prints a `username` and IP.
+
+That's it. Tell Claude the host + username and it finishes everything — connects, installs the visual
+helper, and (optionally) enables autologon so reboots auto-recover. Full reference:
+[`docs/SETUP.md`](docs/SETUP.md).
+
+> **Why one paste on Windows?** Claude-Control drives a *remote* machine, and you can't enable SSH on
+> a box you can't reach yet — that paste is the security boundary that lets the tool in. Everything
+> after it is automated.
 
 ---
 
@@ -63,11 +94,14 @@ network.
 
 ---
 
-## Quick start (fresh machine)
+## Quick start (manual / under the hood)
 
-New here — or a fresh Claude Code session with nothing set up? Do these in order. Steps 1–3 are on
-**your Mac**; step 4 is the one manual step on the **Windows target**; steps 5–6 are back on the Mac
-(Claude Code can do them for you).
+> Most people should use **[Get started (2 steps)](#get-started-2-steps)** or `/claude-control-setup`
+> above — `scripts/setup.mjs` automates everything below. This section documents the same steps by
+> hand, for understanding or for environments where you'd rather not run the script.
+
+Do these in order. Steps 1–3 are on **your Mac**; step 4 is the one manual step on the **Windows
+target**; steps 5–6 are back on the Mac (Claude Code can do them for you).
 
 1. **Clone & build** (needs Node ≥ 20, and the `ssh`/`scp` that ship with macOS):
    ```bash
