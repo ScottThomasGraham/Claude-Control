@@ -92,7 +92,11 @@ export function psEncode(script: string): string {
 
 /** Run a PowerShell script on the target via -EncodedCommand. */
 export function runPowerShell(script: string, opts: ExecOpts = {}): Promise<ExecResult> {
-  return sshExec(`powershell -NoProfile -NonInteractive -EncodedCommand ${psEncode(script)}`, opts);
+  // Silence the progress stream — over SSH, PowerShell serializes progress
+  // records to stderr as CLIXML ("Preparing modules for first use…"), which
+  // otherwise pollutes every command's stderr.
+  const wrapped = `$ProgressPreference='SilentlyContinue';\n${script}`;
+  return sshExec(`powershell -NoProfile -NonInteractive -EncodedCommand ${psEncode(wrapped)}`, opts);
 }
 
 /**
