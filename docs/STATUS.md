@@ -125,7 +125,7 @@ desktop session.
      -- node ~/Projects/Claude-Control/build/index.js
    ```
 5. **Bring up visual control:** call the `bootstrap` tool (or run, over ssh:
-   `powershell -ExecutionPolicy Bypass -File C:/ProgramData/ClaudeControl/bootstrap.ps1 -HelperPort 49705`
+   `powershell -ExecutionPolicy Bypass -File C:/ProgramData/ClaudeControl/bootstrap.ps1 -HelperPort 8765`
    after `scp`-ing `windows/*.ps1` to `C:/ProgramData/ClaudeControl/`). The MCP `bootstrap` tool does
    all of this automatically.
 6. **Validate the loop:** `status` (helper reachable?) → `screenshot` → `ui_tree` → `click` →

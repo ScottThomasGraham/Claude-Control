@@ -73,7 +73,7 @@ export function buildServer(): McpServer {
         os: z.enum(["windows", "macos"]).optional().describe("Target OS (default windows)"),
         port: z.number().int().optional().describe("SSH port (default 22)"),
         identityFile: z.string().optional().describe("Path to a private key file (optional; uses ssh-agent otherwise)"),
-        helperPort: z.number().int().optional().describe("Loopback port the Windows visual helper listens on (default 49705)"),
+        helperPort: z.number().int().optional().describe("Loopback port the Windows visual helper listens on (default 8765)"),
       },
     },
     tool(async (a: { host: string; user: string; os?: TargetOs; port?: number; identityFile?: string; helperPort?: number }) => {

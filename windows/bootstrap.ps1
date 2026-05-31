@@ -8,12 +8,19 @@
 
   Uses only preinstalled facilities. Must run as an administrator.
 
-    powershell -NoProfile -ExecutionPolicy Bypass -File bootstrap.ps1 -HelperPort 49705 [-EnableRdp]
+    powershell -NoProfile -ExecutionPolicy Bypass -File bootstrap.ps1 -HelperPort 8765 [-EnableRdp] [-DisableIdleLock]
     powershell -NoProfile -ExecutionPolicy Bypass -File bootstrap.ps1 -Uninstall
+
+  Default helper port is 8765 — a LOW static port deliberately BELOW the Windows
+  ephemeral range (49152-65535). After a reboot, Windows/WinNAT/Hyper-V reserve
+  chunks of the ephemeral range and can grab a high port (e.g. 49705), so the
+  helper would fail to bind with WSAEACCES. We also reserve the chosen port
+  persistently so nothing else takes it.
 #>
 param(
-  [int]$HelperPort = 49705,
+  [int]$HelperPort = 8765,
   [switch]$EnableRdp,
+  [switch]$DisableIdleLock,
   [switch]$Uninstall
 )
 
@@ -27,6 +34,7 @@ if ($Uninstall) {
   try { Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop | Unregister-ScheduledTask -Confirm:$false; Write-Line "task removed" } catch { Write-Line "task not present" }
   try { Get-Process powershell -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.CommandLine -match 'helper.ps1' } | Stop-Process -Force } catch {}
   try { Remove-Item -Recurse -Force 'C:\ProgramData\ClaudeControl' -ErrorAction SilentlyContinue; Write-Line "files removed" } catch {}
+  try { netsh int ipv4 delete excludedportrange protocol=tcp startport=$HelperPort numberofports=1 store=persistent | Out-Null; Write-Line "port reservation released" } catch {}
   Write-Line "UNINSTALL OK"
   return
 }
@@ -36,6 +44,26 @@ if ($EnableRdp) {
   Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0
   try { Enable-NetFirewallRule -DisplayGroup 'Remote Desktop' } catch {}
   Write-Line "RDP enabled"
+}
+
+# 1b) reserve the helper port persistently so Windows' dynamic/ephemeral ranges
+#     never grab it across reboots (the cause of post-reboot WSAEACCES binds).
+try {
+  netsh int ipv4 add excludedportrange protocol=tcp startport=$HelperPort numberofports=1 store=persistent | Out-Null
+  Write-Line "reserved TCP port $HelperPort (persistent)"
+} catch { Write-Line "port reservation skipped ($($_.Exception.Message))" }
+
+# 1c) optionally stop the desktop from idle-locking (a locked/disconnected
+#     session has no capturable desktop -> screenshots fail). Also helps after a
+#     stray RDP connect+disconnect leaves the console session locked.
+if ($DisableIdleLock) {
+  try { powercfg /change monitor-timeout-ac 0 | Out-Null; powercfg /change standby-timeout-ac 0 | Out-Null } catch {}
+  try { Set-ItemProperty 'HKCU:\Control Panel\Desktop' -Name ScreenSaveActive -Value '0' -ErrorAction SilentlyContinue } catch {}
+  try {
+    New-Item 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Force | Out-Null
+    Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name DisableLockWorkstation -Value 1 -Type DWord
+  } catch {}
+  Write-Line "idle-lock disabled (monitor/standby never, screensaver off, lock workstation disabled)"
 }
 
 # 2) figure out which interactive user the helper should run as.
@@ -67,7 +95,8 @@ $action    = New-ScheduledTaskAction -Execute 'powershell.exe' `
 $trigger   = New-ScheduledTaskTrigger -AtLogOn
 $principal = New-ScheduledTaskPrincipal -UserId $consoleUser -LogonType Interactive -RunLevel Highest
 $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
-              -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero)
+              -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) `
+              -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
 
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
   -Principal $principal -Settings $settings -Force | Out-Null
