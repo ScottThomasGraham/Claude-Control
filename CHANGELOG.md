@@ -7,7 +7,7 @@ All notable changes to this project are documented here. Format follows
 ## [Unreleased]
 
 ### Fixed
-- **First live run against a real Windows target (SGRAHAM-MINI, Win 11 Pro) on 2026-05-31** surfaced
+- **First live run against a real Windows target (Win 11 Pro) on 2026-05-31** surfaced
   two bugs, both fixed:
   - `bootstrap.ps1` resolved the interactive user wrong on a workgroup machine with an **RDP** (non-
     console) logon: `Win32_ComputerSystem.UserName` is empty for RDP sessions and the fallback used
