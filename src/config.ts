@@ -30,7 +30,7 @@ export const config: ConnConfig = {
   port: Number(process.env.CLAUDE_CONTROL_PORT ?? 22),
   os: envOs(),
   identityFile: process.env.CLAUDE_CONTROL_IDENTITY,
-  helperPort: Number(process.env.CLAUDE_CONTROL_HELPER_PORT ?? 49705),
+  helperPort: Number(process.env.CLAUDE_CONTROL_HELPER_PORT ?? 8765),
 };
 
 export function setTarget(p: {

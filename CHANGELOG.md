@@ -7,6 +7,17 @@ All notable changes to this project are documented here. Format follows
 ## [Unreleased]
 
 ### Fixed
+- **Hardening from a full live TIA Portal V21 install run (helper v0.2.0):**
+  - `helper.ps1`: sanitize control characters (C0 range + U+0085/U+2028/U+2029) out of UI Automation
+    names/titles — Windows PowerShell 5.1's `ConvertTo-Json` doesn't escape these, so element names
+    lifted from web content produced invalid JSON and crashed `ui_find`/`ui_tree`. Added `+`/numpad
+    and punctuation keys to the key map (so `Ctrl+plus` zoom works; previously "unknown key 'plus'").
+  - `bootstrap.ps1` + default config: helper now uses a **low static port (8765)** instead of an
+    ephemeral one — after a reboot Windows/WinNAT reserve ephemeral ranges and a high port (e.g.
+    49705) fails to bind with `WSAEACCES`. `bootstrap` reserves the port persistently
+    (`netsh excludedportrange`), adds **restart-on-failure** to the helper task, and gained a
+    `-DisableIdleLock` switch (stops the console session idle-locking, which blanks screen capture).
+
 - **First live run against a real Windows target (Win 11 Pro) on 2026-05-31** surfaced
   two bugs, both fixed:
   - `bootstrap.ps1` resolved the interactive user wrong on a workgroup machine with an **RDP** (non-

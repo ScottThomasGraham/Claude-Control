@@ -18,7 +18,7 @@ import { writeFileSync } from "node:fs";
 import { setTarget } from "../build/config.js";
 import { runRemote } from "../build/ssh.js";
 import {
-  vScreenshot, vClick, vType, vKeys, vUiFind, vListWindows, vFocusWindow, vWaitIdle,
+  vScreenshot, vClick, vScroll, vType, vKeys, vUiFind, vListWindows, vFocusWindow, vWaitIdle,
 } from "../build/visual.js";
 
 if (!process.env.CLAUDE_CONTROL_HOST || !process.env.CLAUDE_CONTROL_USER) {
@@ -49,6 +49,7 @@ switch (op) {
   case "shot": await saveShot(rest[0] ?? "/tmp/cc.png"); break;
   case "find": console.log(JSON.stringify(await vUiFind(rest.join(" ")), null, 2)); break;
   case "click": await vClick(Number(rest[0]), Number(rest[1]), "left", false); console.log(`clicked ${rest[0]},${rest[1]}`); break;
+  case "scroll": await vScroll(Number(rest[0])); console.log(`scrolled ${rest[0]}`); break;
   case "type": await vType(rest.join(" ")); console.log(`typed ${rest.join(" ").length} chars`); break;
   case "keys": await vKeys(rest.join(" ")); console.log(`pressed ${rest.join(" ")}`); break;
   case "windows": console.log(JSON.stringify(await vListWindows(), null, 2)); break;

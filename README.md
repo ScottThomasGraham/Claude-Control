@@ -167,7 +167,7 @@ Then, from Claude Code, ask it to **`bootstrap`** the host once — that install
 | `ui_tree` / `ui_find` | UI Automation elements with click-ready coordinates. |
 | `list_windows` / `focus_window` | Orient and switch between windows in big multi-window apps. |
 | `wait_idle` | Block until the screen stops changing — e.g. after a TIA compile/download. |
-| `bootstrap` | Install the interactive-session helper (logon task) + optionally enable RDP. |
+| `bootstrap` | Install the interactive-session helper (logon task), reserve its port, restart-on-failure; flags: `-EnableRdp`, `-DisableIdleLock`, `-Uninstall`. |
 
 Coordinates are consistent everywhere: `ui_tree` centers feed straight into `click`. The visual,
 `ui_*`, and window tools are Windows-first; on macOS, `run`/`upload`/`download`/`screenshot` work
@@ -198,7 +198,18 @@ Things that bit us on the first real run — worth knowing up front:
   anywhere, captures can go stale/black. Expect to share the cursor — take turns.
 - **Screen size follows the RDP client.** Screenshot dimensions track whatever the RDP session is
   currently sized to. That's fine — `ui_tree`/`ui_find` coordinates are always in the same space as
-  the matching screenshot, so clicks land correctly.
+  the matching screenshot, so clicks land correctly. (Also: RDP'ing in and **disconnecting** leaves
+  the console session **locked** — captures fail with "handle is invalid" until you reconnect or
+  reboot. `bootstrap -DisableIdleLock` reduces this.)
+- **Helper port is a low static port (8765), reserved persistently.** After a reboot, Windows/WinNAT
+  reserve chunks of the ephemeral range (49152–65535), so a high helper port (e.g. 49705) can fail to
+  bind with `WSAEACCES` ("socket access forbidden"). `bootstrap` defaults to **8765** and reserves it
+  via `netsh ... add excludedportrange`, so reboots don't break it.
+- **For unattended / bulletproof reboots, enable autologon.** The helper only starts at *logon*. With
+  autologon on, a reboot auto-logs-in the user → the helper's logon task restarts → control returns
+  with zero manual steps (validated end-to-end installing TIA Portal across two reboots). Use
+  Sysinternals **Autologon** (stores the password as an encrypted LSA secret — never plaintext in the
+  registry). `bootstrap` also sets restart-on-failure on the helper task.
 
 ---
 
