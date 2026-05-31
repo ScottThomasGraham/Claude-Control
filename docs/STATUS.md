@@ -37,15 +37,25 @@ sent to the owner. Two real bugs were found and fixed in the process (see below)
 - **Repro harness:** `scripts/live-validate.mjs <host> <user> <identityFile> [helperPort]` drives the
   *shipped* functions (not the MCP layer) through the whole loop. Re-run it any time to re-validate.
 
+### Validated as a real MCP server too (2026-05-31)
+
+- Registered with `claude mcp add claude-control --env CLAUDE_CONTROL_HOST=<tailscale-ip> --env
+  CLAUDE_CONTROL_USER=<winuser> --env CLAUDE_CONTROL_IDENTITY=$HOME/.ssh/claude-control_ed25519 -- node
+  ~/Projects/Claude-Control/build/index.js` — `claude mcp list` reports **✓ Connected**.
+- Drove the built server over stdio with the MCP SDK's own `Client` (`scripts/mcp-test.mjs`): all 17
+  tools advertised; verified `connect`, `status` (helper v0.1.0 reachable), `run`, `screenshot`
+  (image content block), `list_windows`, `ui_find` ("Recycle Bin" at 38,40), `press_keys`, and a
+  bad-arg `click` returning a clean MCP `-32602` validation error (no crash).
+- Fixed a cosmetic wart found here: PowerShell serialized its progress stream to stderr as CLIXML
+  over SSH; `runPowerShell` now sets `$ProgressPreference='SilentlyContinue'`.
+
 ### Still open / next ideas
 
-- The MCP server itself has not been exercised *as an MCP server* against this box from a separate
-  Claude Code session (we drove the shipped functions directly via `live-validate.mjs`). To do the
-  real attach: `claude mcp add claude-control --env CLAUDE_CONTROL_HOST=<tailscale-ip> --env
-  CLAUDE_CONTROL_USER=<winuser> --env CLAUDE_CONTROL_IDENTITY=$HOME/.ssh/claude-control_ed25519 -- node
-  ~/Projects/Claude-Control/build/index.js` in a fresh session, then call the tools.
 - macOS target validation (input + AX-tree) still pending a Mac target.
 - Helper only binds when an interactive session exists — true here (RDP session stays active).
+- Note: screen resolution is reported by whatever the RDP session is currently sized to (saw both
+  1512x949 and 1008x623 across runs as the RDP window changed) — coordinates stay internally
+  consistent with the matching screenshot, so clicks land correctly.
 
 <details><summary>Historical state (pre-first-run, 2026-05-30)</summary>
 
