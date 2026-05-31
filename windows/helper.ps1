@@ -207,7 +207,7 @@ function Get-Elements([int]$max, [string]$nameFilter) {
         if ($nameFilter) { $include = ($name -and $name.ToLower().Contains($nameFilter.ToLower())) }
         if ($include) {
           [void]$out.Add(@{
-            type   = $el.Current.ControlType.ProgrammaticName -replace '^ControlType\.',''
+            type   = ($el.Current.ControlType.ProgrammaticName -replace '^ControlType\.', '')
             name   = $name
             x      = [int]($r.X + $r.Width/2 - $vs.X)
             y      = [int]($r.Y + $r.Height/2 - $vs.Y)
