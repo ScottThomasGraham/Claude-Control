@@ -6,6 +6,19 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+- **First live run against a real Windows target (SGRAHAM-MINI, Win 11 Pro) on 2026-05-31** surfaced
+  two bugs, both fixed:
+  - `bootstrap.ps1` resolved the interactive user wrong on a workgroup machine with an **RDP** (non-
+    console) logon: `Win32_ComputerSystem.UserName` is empty for RDP sessions and the fallback used
+    `$env:USERDOMAIN` (=`WORKGROUP`), which has no SID, so `Register-ScheduledTask` failed. Now falls
+    back to parsing `quser` for the active session and normalizes the principal to `COMPUTERNAME\user`.
+  - `helper.ps1` had a latent **PowerShell parse error** (`-replace 'pat',''` inside a hashtable
+    literal) that made the entire script fail to load → the helper exited with code 1 and never bound
+    its port. Parenthesized the expression. (Not caught by `npm run smoke`, which never parses the PS.)
+- Validation harness `scripts/live-validate.mjs` drives the shipped functions through the whole
+  connect→bootstrap→screenshot→ui_tree→input loop against a real target.
+
 ### Added
 - **Cross-platform targets:** `connect` takes an `os` (`windows`/`macos`); `run` uses PowerShell on
   Windows and `/bin/sh` on macOS. macOS supports run/upload/download + `screenshot` (via

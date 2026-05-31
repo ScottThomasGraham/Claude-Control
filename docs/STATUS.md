@@ -1,6 +1,6 @@
 # STATUS — resume here
 
-**Last updated:** 2026-05-30
+**Last updated:** 2026-05-31
 **For a fresh Claude session:** read this file first, then
 [`docs/architecture/implemented-architecture.md`](architecture/implemented-architecture.md), then the
 `src/` and `windows/` code. This file is the single source of truth for *where we are*.
@@ -9,9 +9,50 @@
 
 ## One-line state
 
-The tool is **built, working, and pushed**. We are **one step from the first live run**: waiting for
-**SGRAHAM-MINI** to finish enabling OpenSSH, then connecting and validating end-to-end. The owner
-has already pasted the enable-SSH script on the Mini.
+**✅ FIRST LIVE RUN SUCCEEDED (2026-05-31).** The full visual loop is validated end-to-end against
+**SGRAHAM-MINI** (Windows 11 Pro, build 26200) over the Tailscale tailnet: connect → bootstrap →
+helper ping → **screenshot** → **ui_tree** (53 elements) → **keyboard input** (pressed Win, Start
+menu opened) → screenshot. Proof screenshots saved to `/tmp/cc-shot-{1,2}.png` during the run and
+sent to the owner. Two real bugs were found and fixed in the process (see below).
+
+### First-live-run record (2026-05-31)
+
+- **Target:** `<winuser>@<tailscale-ip>` (SGRAHAM-MINI), identity `~/.ssh/claude-control_ed25519`,
+  helper port 49705. Interactive session is **RDP** (session 2), not console.
+- **Getting SSH up took three target-side fixes:** install the OpenSSH.Server capability + start
+  `sshd`; then the inbound firewall rule was scoped to **Private** only while Windows classified one
+  path as Public — fixed by adding an **all-profiles** (`-Profile Any`) allow rule. (`/dev/tcp` on
+  the Mac falsely reported the port closed even once it was open — trust `nc`/`ssh`, not `/dev/tcp`.)
+- **Bug 1 — `bootstrap.ps1` user resolution.** `Win32_ComputerSystem.UserName` is empty for an RDP
+  (non-console) logon, and the fallback used `$env:USERDOMAIN` = **`WORKGROUP`**, which is not a real
+  SID → `Register-ScheduledTask` failed ("No mapping between account names and security IDs"). Fixed:
+  fall back to parsing `quser` for the active session, and **normalize to `COMPUTERNAME\user`**.
+- **Bug 2 — `helper.ps1` parse error (latent).** Line ~210
+  `type = $el.Current.ControlType.ProgrammaticName -replace '^ControlType\.',''` failed to parse in
+  Windows PowerShell 5.1 (the `-replace 'pat',''` comma inside a hashtable literal cascaded into
+  "hash literal incomplete"), so the whole script exited with code 1 and the helper never bound its
+  port. Fixed by parenthesizing: `($... -replace '^ControlType\.', '')`. **`npm run smoke` never
+  caught this** — it only checks the Node MCP tool registry, never parses the PowerShell. Consider
+  adding a PS parse-check (`[Parser]::ParseFile`) to CI.
+- **Repro harness:** `scripts/live-validate.mjs <host> <user> <identityFile> [helperPort]` drives the
+  *shipped* functions (not the MCP layer) through the whole loop. Re-run it any time to re-validate.
+
+### Still open / next ideas
+
+- The MCP server itself has not been exercised *as an MCP server* against this box from a separate
+  Claude Code session (we drove the shipped functions directly via `live-validate.mjs`). To do the
+  real attach: `claude mcp add claude-control --env CLAUDE_CONTROL_HOST=<tailscale-ip> --env
+  CLAUDE_CONTROL_USER=<winuser> --env CLAUDE_CONTROL_IDENTITY=$HOME/.ssh/claude-control_ed25519 -- node
+  ~/Projects/Claude-Control/build/index.js` in a fresh session, then call the tools.
+- macOS target validation (input + AX-tree) still pending a Mac target.
+- Helper only binds when an interactive session exists — true here (RDP session stays active).
+
+<details><summary>Historical state (pre-first-run, 2026-05-30)</summary>
+
+The tool was built, working, and pushed; we were one step from the first live run, waiting for
+SGRAHAM-MINI to finish enabling OpenSSH. (Resolved 2026-05-31 — see above.)
+
+</details>
 
 ## What this project is (so you don't re-derive it)
 

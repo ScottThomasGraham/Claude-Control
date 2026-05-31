@@ -38,10 +38,27 @@ if ($EnableRdp) {
   Write-Line "RDP enabled"
 }
 
-# 2) figure out which interactive user the helper should run as
+# 2) figure out which interactive user the helper should run as.
+#    Win32_ComputerSystem.UserName only reports the *console* session, so it is
+#    empty when the user is logged in over RDP. Fall back to parsing `quser` for
+#    any active interactive session, then to the SSH account. Whatever we find,
+#    normalize a bare/workgroup name to COMPUTERNAME\user so it maps to a real
+#    SID (a workgroup machine's USERDOMAIN is "WORKGROUP", which does NOT).
 $consoleUser = $null
 try { $consoleUser = (Get-CimInstance Win32_ComputerSystem).UserName } catch {}
-if (-not $consoleUser) { $consoleUser = "$env:USERDOMAIN\$env:USERNAME" }
+if (-not $consoleUser) {
+  try {
+    # quser columns: USERNAME  SESSIONNAME  ID  STATE ...  (leading '>' = current)
+    $line = (quser 2>$null) | Select-Object -Skip 1 |
+      Where-Object { $_ -match '\bActive\b' } | Select-Object -First 1
+    if (-not $line) { $line = (quser 2>$null) | Select-Object -Skip 1 | Select-Object -First 1 }
+    if ($line) { $consoleUser = (($line -replace '^\s*>?\s*','') -split '\s+')[0] }
+  } catch {}
+}
+if (-not $consoleUser) { $consoleUser = $env:USERNAME }
+# normalize: strip any domain/workgroup prefix, then qualify with the computer name
+$bareUser = ($consoleUser -split '\\')[-1]
+$consoleUser = "$env:COMPUTERNAME\$bareUser"
 Write-Line "helper will run as: $consoleUser"
 
 # 3) (re)register the logon Scheduled Task in the interactive user's context
