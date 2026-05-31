@@ -10,14 +10,14 @@
 ## One-line state
 
 **✅ FIRST LIVE RUN SUCCEEDED (2026-05-31).** The full visual loop is validated end-to-end against
-**SGRAHAM-MINI** (Windows 11 Pro, build 26200) over the Tailscale tailnet: connect → bootstrap →
+**THE-PC** (Windows 11 Pro, build 26200) over the Tailscale tailnet: connect → bootstrap →
 helper ping → **screenshot** → **ui_tree** (53 elements) → **keyboard input** (pressed Win, Start
 menu opened) → screenshot. Proof screenshots saved to `/tmp/cc-shot-{1,2}.png` during the run and
 sent to the owner. Two real bugs were found and fixed in the process (see below).
 
 ### First-live-run record (2026-05-31)
 
-- **Target:** `<winuser>@<tailscale-ip>` (SGRAHAM-MINI), identity `~/.ssh/claude-control_ed25519`,
+- **Target:** `WINUSER@HOST` (THE-PC), identity `~/.ssh/claude-control_ed25519`,
   helper port 49705. Interactive session is **RDP** (session 2), not console.
 - **Getting SSH up took three target-side fixes:** install the OpenSSH.Server capability + start
   `sshd`; then the inbound firewall rule was scoped to **Private** only while Windows classified one
@@ -34,13 +34,13 @@ sent to the owner. Two real bugs were found and fixed in the process (see below)
   port. Fixed by parenthesizing: `($... -replace '^ControlType\.', '')`. **`npm run smoke` never
   caught this** — it only checks the Node MCP tool registry, never parses the PowerShell. Consider
   adding a PS parse-check (`[Parser]::ParseFile`) to CI.
-- **Repro harness:** `scripts/live-validate.mjs <host> <user> <identityFile> [helperPort]` drives the
+- **Repro harness:** `scripts/live-validate.mjs HOST <user> <identityFile> [helperPort]` drives the
   *shipped* functions (not the MCP layer) through the whole loop. Re-run it any time to re-validate.
 
 ### Validated as a real MCP server too (2026-05-31)
 
-- Registered with `claude mcp add claude-control --env CLAUDE_CONTROL_HOST=<tailscale-ip> --env
-  CLAUDE_CONTROL_USER=<winuser> --env CLAUDE_CONTROL_IDENTITY=$HOME/.ssh/claude-control_ed25519 -- node
+- Registered with `claude mcp add claude-control --env CLAUDE_CONTROL_HOST=HOST --env
+  CLAUDE_CONTROL_USER=WINUSER --env CLAUDE_CONTROL_IDENTITY=$HOME/.ssh/claude-control_ed25519 -- node
   ~/Projects/Claude-Control/build/index.js` — `claude mcp list` reports **✓ Connected**.
 - Drove the built server over stdio with the MCP SDK's own `Client` (`scripts/mcp-test.mjs`): all 17
   tools advertised; verified `connect`, `status` (helper v0.1.0 reachable), `run`, `screenshot`
@@ -60,7 +60,7 @@ sent to the owner. Two real bugs were found and fixed in the process (see below)
 <details><summary>Historical state (pre-first-run, 2026-05-30)</summary>
 
 The tool was built, working, and pushed; we were one step from the first live run, waiting for
-SGRAHAM-MINI to finish enabling OpenSSH. (Resolved 2026-05-31 — see above.)
+THE-PC to finish enabling OpenSSH. (Resolved 2026-05-31 — see above.)
 
 </details>
 
@@ -95,9 +95,9 @@ desktop session.
 
 ## The target
 
-- **SGRAHAM-MINI** — owner's Windows test PC, in the `<winuser>g@` Tailscale tailnet.
-  - Tailscale IP (preferred, works anywhere): **`<tailscale-ip>`**
-  - LAN: **`SGRAHAM-MINI.local`** = `<lan-ip>`
+- **THE-PC** — owner's Windows test PC, in the your Tailscale tailnet.
+  - Tailscale IP (preferred, works anywhere): **`HOST`**
+  - LAN: **`THE-PC.local`** = `LAN_IP`
 - Owner has pasted the OpenSSH-enable + key-authorize script; it was still installing at last check
   (port 22 closed). The owner will open a terminal when it finishes.
 
@@ -108,18 +108,18 @@ desktop session.
 
 1. **Confirm SSH is up:**
    ```bash
-   (exec 3<>/dev/tcp/<tailscale-ip>/22) 2>/dev/null && echo OPEN || echo "not yet"
+   (exec 3<>/dev/tcp/HOST/22) 2>/dev/null && echo OPEN || echo "not yet"
    ```
 2. **Smoke the connection** (raw ssh = same path the MCP server uses under the hood):
    ```bash
    ssh -i ~/.ssh/claude-control_ed25519 -o StrictHostKeyChecking=accept-new \
-     <WINUSER>@<tailscale-ip> 'powershell -NoProfile -Command "$env:COMPUTERNAME; [Environment]::OSVersion.VersionString"'
+     <WINUSER>@HOST 'powershell -NoProfile -Command "$env:COMPUTERNAME; [Environment]::OSVersion.VersionString"'
    ```
 3. **Build (if fresh checkout):** `cd ~/Projects/Claude-Control && npm install && npm run build`
 4. **Attach to Claude Code:**
    ```bash
    claude mcp add claude-control \
-     --env CLAUDE_CONTROL_HOST=<tailscale-ip> \
+     --env CLAUDE_CONTROL_HOST=HOST \
      --env CLAUDE_CONTROL_USER=<WINUSER> \
      --env CLAUDE_CONTROL_IDENTITY=$HOME/.ssh/claude-control_ed25519 \
      -- node ~/Projects/Claude-Control/build/index.js

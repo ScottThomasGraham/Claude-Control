@@ -4,11 +4,12 @@
 
 ---
 
-> ### 🚦 Picking this up in a fresh session? **Read [`docs/STATUS.md`](docs/STATUS.md) first.**
-> It records exactly where we are and the precise next steps. **Current state (2026-05-30):** the
-> tool is built, working, and pushed (17 MCP tools); we're one step from the first live run —
-> waiting on test PC **SGRAHAM-MINI** to finish enabling OpenSSH, then connect + validate. The one
-> outstanding input is the Windows **username** for that box.
+> ### ✅ Status: working & validated end-to-end (2026-05-31)
+> 17-tool MCP server, validated on a live Windows 11 Pro target over Tailscale — connect → bootstrap →
+> screenshot → read the UI tree → click → type, plus driving a real GUI app (opened Word and typed a
+> document). See **[Quick start](#quick-start-fresh-machine)** below to set it up from scratch, and
+> [`docs/STATUS.md`](docs/STATUS.md) for the full build/validation history. macOS targets support
+> run/upload/download/screenshot today; input + AX-tree are pending a Mac target.
 
 ---
 
@@ -44,7 +45,7 @@ The design principle: **use the cheapest channel that does the job.**
 ## How it works
 
 ```
-   Your Mac (Claude Code)                          Windows PC (e.g. SGRAHAM-MINI)
+   Your Mac (Claude Code)                          Windows PC (the target)
  ┌─────────────────────────┐      SSH (OpenSSH)   ┌────────────────────────────────┐
  │  claude-control (MCP)   │───── powershell ─────▶│  PowerShell + .NET             │
  │   • run / upload / ...  │      scp files        │   • commands, files            │
@@ -59,6 +60,45 @@ The design principle: **use the cheapest channel that does the job.**
 Authentication is your **OS ssh keys** — no password is ever sent or stored. The helper binds
 **loopback only** and is reached *through* the SSH connection, so nothing new is exposed on the
 network.
+
+---
+
+## Quick start (fresh machine)
+
+New here — or a fresh Claude Code session with nothing set up? Do these in order. Steps 1–3 are on
+**your Mac**; step 4 is the one manual step on the **Windows target**; steps 5–6 are back on the Mac
+(Claude Code can do them for you).
+
+1. **Clone & build** (needs Node ≥ 20, and the `ssh`/`scp` that ship with macOS):
+   ```bash
+   git clone https://github.com/ScottThomasGraham/Claude-Control.git
+   cd Claude-Control && npm install && npm run build && npm run smoke   # smoke should print "SMOKE OK"
+   ```
+2. **Make a dedicated SSH key** for this (keeps it separate from your other keys):
+   ```bash
+   ssh-keygen -t ed25519 -f ~/.ssh/claude-control_ed25519 -C "claude-control" -N ""
+   cat ~/.ssh/claude-control_ed25519.pub   # copy this — you paste it on Windows in step 3
+   ```
+3. **One-time Windows setup** — run the elevated-PowerShell block in [Install → step 3](#install)
+   on the target (enables OpenSSH, authorizes your key, opens the firewall on **all** profiles).
+   Note the username it prints at the end; you need it. The target must be reachable from your Mac —
+   same LAN, or a VPN/mesh like [Tailscale](https://tailscale.com) (recommended; works anywhere).
+4. **Sanity-check the connection** from the Mac (this is the exact path the server uses):
+   ```bash
+   ssh -i ~/.ssh/claude-control_ed25519 <win-user>@<host> 'powershell -NoProfile -Command "$env:COMPUTERNAME"'
+   ```
+   > If this times out but the host pings, it's almost always the firewall — see
+   > [Gotchas](#gotchas-hard-won-lessons). `nc -vz <host> 22` tells you if port 22 is really open;
+   > don't trust bash's `/dev/tcp`, which can report false negatives.
+5. **Attach to Claude Code** (see [Install → step 2](#install)), then in a Claude Code session say:
+   *"connect to `<host>` as `<win-user>` with identity `~/.ssh/claude-control_ed25519`, then bootstrap."*
+   The `connect` tool verifies SSH; `bootstrap` installs the visual helper into your desktop session.
+6. **Try it:** *"take a screenshot."* If it returns an image, you're done. To watch live while Claude
+   drives, RDP into the **same** Windows user/session and leave the window connected.
+
+A brand-new Claude Code working from this repo has everything it needs: the steps above, the
+[Tools](#tools) table, and [Gotchas](#gotchas-hard-won-lessons). For project history and the
+validation record, see [`docs/STATUS.md`](docs/STATUS.md).
 
 ---
 
@@ -95,7 +135,9 @@ the tool in). In an **elevated PowerShell** on the target, enable OpenSSH and au
 # Enable OpenSSH Server
 Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
 Set-Service sshd -StartupType Automatic; Start-Service sshd
-New-NetFirewallRule -Name sshd -DisplayName 'OpenSSH Server' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 -ErrorAction SilentlyContinue
+# Allow inbound 22 on ALL profiles. The capability's own rule is sometimes scoped to
+# "Private" only, which silently blocks a Tailscale/Public interface — so add an explicit one.
+New-NetFirewallRule -Name sshd-allprofiles -DisplayName 'OpenSSH Server (all profiles)' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 -Profile Any
 # Default shell = PowerShell
 New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -PropertyType String -Force | Out-Null
 # Authorize your Claude-Control public key (admin accounts use this shared file)
@@ -130,6 +172,33 @@ Then, from Claude Code, ask it to **`bootstrap`** the host once — that install
 Coordinates are consistent everywhere: `ui_tree` centers feed straight into `click`. The visual,
 `ui_*`, and window tools are Windows-first; on macOS, `run`/`upload`/`download`/`screenshot` work
 today and the rest return a clear notice until validated on a Mac target.
+
+---
+
+## Gotchas (hard-won lessons)
+
+Things that bit us on the first real run — worth knowing up front:
+
+- **Port 22 closed even though the host pings?** Windows often scopes the OpenSSH firewall rule to
+  the **Private** profile, while a Tailscale/VPN adapter gets classified **Public** — so SSH is
+  silently blocked. Add an all-profiles rule: `New-NetFirewallRule -Name sshd-allprofiles -Enabled
+  True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 -Profile Any`. Also: bash's
+  `/dev/tcp` can report a false "closed" — verify with `nc -vz <host> 22` or a real `ssh`.
+- **Launch GUI apps with keystrokes, not `Start-Process`.** A command run over SSH executes in
+  **session 0** (the service session), so `Start-Process winword` opens Word *invisibly* there, not
+  on the desktop. To open an app where the helper can see it, drive the desktop: `press_keys "Win"`,
+  `type_text "Word"`, `press_keys "Enter"` (or use `Win+R` and type the path). Same root cause as
+  why the helper must run as a logon task, not a service.
+- **Helper only binds while someone is logged in.** The helper lives in the interactive desktop
+  session (logon Scheduled Task). If `screenshot` says the helper is unreachable but `run` works,
+  no one is logged in — log in (or enable autologon). A **disconnected** RDP session keeps the
+  helper alive; **logging off** kills it.
+- **Watching live = RDP to the same user/session.** Reconnect as the same Windows user and you land
+  in the very session Claude drives. Keep the window connected; if the desktop isn't being rendered
+  anywhere, captures can go stale/black. Expect to share the cursor — take turns.
+- **Screen size follows the RDP client.** Screenshot dimensions track whatever the RDP session is
+  currently sized to. That's fine — `ui_tree`/`ui_find` coordinates are always in the same space as
+  the matching screenshot, so clicks land correctly.
 
 ---
 
