@@ -70,6 +70,23 @@ is idempotent and does only what's needed to let the controller in:
 | `deploy --host H --user U [--identity P] [--autologon]` | Connect → push helper → bootstrap (reserved port 8765, restart-on-failure, idle-lock off) → optional autologon → save a proof screenshot. |
 | `autologon --host H --user U` | Enable autologon only (prompts for the Windows password). |
 
+## Attach without cloning (npx from GitHub)
+
+If a target is **already provisioned** and you just want to attach the MCP server on a Mac without
+cloning the repo, run it straight from GitHub — nothing is published to any registry or marketplace,
+it's just this repo:
+
+```bash
+claude mcp add claude-control \
+  --env CLAUDE_CONTROL_HOST=<ip> --env CLAUDE_CONTROL_USER=<name> \
+  --env CLAUDE_CONTROL_IDENTITY=$HOME/.ssh/claude-control_ed25519 \
+  -- npx -y github:ScottThomasGraham/Claude-Control
+```
+
+`npx` fetches the repo, builds it on first install (the `prepare` script), and runs the server. Note
+this only attaches the **server** — the full setup flow (`provision.ps1`, `setup.mjs`, the skill)
+still wants a clone, so for a fresh target, clone and use [the fast path](#the-fast-path).
+
 ## Bulletproof reboots (autologon)
 
 The visual helper runs in the interactive desktop session, so it only starts once someone is logged
