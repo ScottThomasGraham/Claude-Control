@@ -24,9 +24,10 @@ import {
   type ExecResult,
 } from "./ssh.js";
 import {
-  vScreenshot, vMove, vClick, vScroll, vType, vKeys, vUiTree, vUiFind,
+  vScreenshot, vMove, vClick, vScroll, vDrag, vMouseDown, vMouseUp, vType, vKeys, vUiTree, vUiFind,
   vListWindows, vFocusWindow, vWaitIdle,
 } from "./visual.js";
+import { tiaCall } from "./tia.js";
 
 const WINDOWS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "windows");
 const REMOTE_DIR = "C:/ProgramData/ClaudeControl";
@@ -223,6 +224,52 @@ export function buildServer(): McpServer {
   );
 
   server.registerTool(
+    "drag",
+    {
+      title: "Drag from one point to another",
+      description:
+        "Press the mouse button at (x1,y1), glide to (x2,y2), and release — a real drag (drag-and-drop, " +
+        "sliders, marquee-select, reordering). Works in any program. Coordinates share the screenshot/ui_tree origin.",
+      inputSchema: {
+        x1: z.number().int(), y1: z.number().int(),
+        x2: z.number().int(), y2: z.number().int(),
+        button: z.enum(["left", "right", "middle"]).optional(),
+        steps: z.number().int().optional().describe("Intermediate moves along the path (default 20; more = slower/smoother)"),
+      },
+    },
+    tool(async (a: { x1: number; y1: number; x2: number; y2: number; button?: string; steps?: number }) => {
+      await vDrag(a.x1, a.y1, a.x2, a.y2, a.button ?? "left", a.steps);
+      return text(`Dragged ${a.button ?? "left"} (${a.x1}, ${a.y1}) -> (${a.x2}, ${a.y2})`);
+    }),
+  );
+
+  server.registerTool(
+    "mouse_down",
+    {
+      title: "Press and hold a mouse button",
+      description: "Move to (x,y) and press a mouse button WITHOUT releasing it. Pair with `mouse_up` for custom gestures (e.g. press-drag-pause-release). For ordinary drags use `drag`.",
+      inputSchema: { x: z.number().int(), y: z.number().int(), button: z.enum(["left", "right", "middle"]).optional() },
+    },
+    tool(async (a: { x: number; y: number; button?: string }) => {
+      await vMouseDown(a.x, a.y, a.button ?? "left");
+      return text(`Pressed ${a.button ?? "left"} at (${a.x}, ${a.y})`);
+    }),
+  );
+
+  server.registerTool(
+    "mouse_up",
+    {
+      title: "Release a held mouse button",
+      description: "Move to (x,y) and release a mouse button. Pairs with `mouse_down`.",
+      inputSchema: { x: z.number().int(), y: z.number().int(), button: z.enum(["left", "right", "middle"]).optional() },
+    },
+    tool(async (a: { x: number; y: number; button?: string }) => {
+      await vMouseUp(a.x, a.y, a.button ?? "left");
+      return text(`Released ${a.button ?? "left"} at (${a.x}, ${a.y})`);
+    }),
+  );
+
+  server.registerTool(
     "type_text",
     {
       title: "Type text",
@@ -318,6 +365,126 @@ export function buildServer(): McpServer {
     }),
   );
 
+  // ---- OPTIONAL accelerator: TIA Portal via Openness ---------------------
+  // A convenience API fast-path for TIA only. NOT required — the visual tools
+  // above drive TIA (and any other program) without it.
+  const tiaText = (r: any): ToolResult =>
+    r && r.ok === false ? fail(JSON.stringify(r, null, 2)) : text(JSON.stringify(r, null, 2));
+
+  server.registerTool(
+    "tia_status",
+    {
+      title: "TIA Openness availability",
+      description:
+        "Report whether Siemens Openness is installed (version + DLL path), any running TIA Portal " +
+        "processes, and whether the account is in the 'Siemens TIA Openness' group. Safe on any box — " +
+        "returns openness_found:false when TIA isn't installed (the visual tools still work).",
+      inputSchema: {},
+    },
+    tool(async () => tiaText(await tiaCall("status"))),
+  );
+
+  server.registerTool(
+    "tia_open_project",
+    {
+      title: "Open / attach a TIA project",
+      description: "Attach to a running TIA Portal (or start one with start:true) and open a project. If a project is already open, returns it.",
+      inputSchema: {
+        path: z.string().optional().describe("Path to a .ap* project file (omit to use the already-open project)"),
+        start: z.boolean().optional().describe("Start a new TIA Portal (with UI) if none is running (default false)"),
+      },
+    },
+    tool(async (a: { path?: string; start?: boolean }) => tiaText(await tiaCall("open_project", a))),
+  );
+
+  server.registerTool(
+    "tia_list_devices",
+    {
+      title: "List TIA project devices",
+      description: "List devices and PLC software in the open TIA project.",
+      inputSchema: { path: z.string().optional() },
+    },
+    tool(async (a: { path?: string }) => tiaText(await tiaCall("list_devices", a))),
+  );
+
+  server.registerTool(
+    "tia_list_blocks",
+    {
+      title: "List PLC blocks",
+      description: "List code/data blocks (OB/FB/FC/DB) for a PLC in the open project. Pass plc=<name> if there is more than one PLC.",
+      inputSchema: { plc: z.string().optional(), path: z.string().optional() },
+    },
+    tool(async (a: { plc?: string; path?: string }) => tiaText(await tiaCall("list_blocks", a))),
+  );
+
+  server.registerTool(
+    "tia_list_tags",
+    {
+      title: "List PLC tags",
+      description: "List PLC tag tables and tags (name, address, type) for a PLC in the open project.",
+      inputSchema: { plc: z.string().optional(), path: z.string().optional() },
+    },
+    tool(async (a: { plc?: string; path?: string }) => tiaText(await tiaCall("list_tags", a))),
+  );
+
+  server.registerTool(
+    "tia_export_block",
+    {
+      title: "Export a PLC block to XML",
+      description: "Export one block to an XML file ON THE TARGET (use `download` to fetch it to this machine afterward).",
+      inputSchema: {
+        block: z.string().describe("Block name"),
+        file: z.string().describe("Destination path on the target, e.g. C:/ProgramData/ClaudeControl/Main.xml"),
+        plc: z.string().optional(),
+        path: z.string().optional(),
+      },
+    },
+    tool(async (a: { block: string; file: string; plc?: string; path?: string }) => tiaText(await tiaCall("export_block", a))),
+  );
+
+  server.registerTool(
+    "tia_import_block",
+    {
+      title: "Import a PLC block from XML",
+      description: "Import a block from an XML file on the target (overwrites a same-named block). Upload the file first with `upload`.",
+      inputSchema: {
+        file: z.string().describe("Source XML path on the target"),
+        plc: z.string().optional(),
+        path: z.string().optional(),
+      },
+    },
+    tool(async (a: { file: string; plc?: string; path?: string }) => tiaText(await tiaCall("import_block", a))),
+  );
+
+  server.registerTool(
+    "tia_compile",
+    {
+      title: "Compile a PLC",
+      description: "Compile a PLC's software; returns compile state and error/warning counts plus messages. Pass plc=<name> if there is more than one PLC.",
+      inputSchema: { plc: z.string().optional(), path: z.string().optional() },
+    },
+    tool(async (a: { plc?: string; path?: string }) => tiaText(await tiaCall("compile", a))),
+  );
+
+  server.registerTool(
+    "tia_download",
+    {
+      title: "Download to a PLC (GATED — writes to real hardware)",
+      description:
+        "Download to a PLC station. HARD-TO-REVERSE: it writes to live hardware. Requires confirm:true AND " +
+        "station:<name>, and must be human-approved before each call — never invoke autonomously. This build " +
+        "verifies the download provider is reachable and reports readiness; the live download is wired up only " +
+        "after validation on the real engineering box (Phase 3).",
+      inputSchema: {
+        station: z.string().describe("Explicit target station name (required)"),
+        confirm: z.literal(true).describe("Must be exactly true — affirms you intend to write to hardware"),
+        plc: z.string().optional(),
+        path: z.string().optional(),
+      },
+    },
+    tool(async (a: { station: string; confirm: true; plc?: string; path?: string }) => tiaText(await tiaCall("download", a))),
+  );
+
   // ---- Setup: bootstrap --------------------------------------------------
   server.registerTool(
     "bootstrap",
@@ -337,7 +504,7 @@ export function buildServer(): McpServer {
       const mk = await runPowerShell(`New-Item -ItemType Directory -Force -Path '${REMOTE_DIR}' | Out-Null; '${REMOTE_DIR}'`);
       if (mk.code !== 0) return fail(`Could not create ${REMOTE_DIR}:\n${runResultText(mk)}`);
       // 2) push scripts
-      for (const f of ["helper.ps1", "bootstrap.ps1"]) {
+      for (const f of ["helper.ps1", "bootstrap.ps1", "tia-openness.ps1"]) {
         const up = await scpUpload(join(WINDOWS_DIR, f), `${REMOTE_DIR}/${f}`);
         if (up.code !== 0) return fail(`Failed to upload ${f}:\n${runResultText(up)}`);
       }

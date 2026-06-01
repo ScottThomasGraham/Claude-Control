@@ -77,6 +77,23 @@ export async function vScroll(amount: number): Promise<void> {
   await helperCall({ op: "scroll", amount });
 }
 
+export async function vDrag(
+  x1: number, y1: number, x2: number, y2: number, button: string, steps?: number,
+): Promise<void> {
+  if (config.os === "macos") macOnlyNotice("drag");
+  await helperCall({ op: "drag", x1, y1, x2, y2, button, steps }, { timeoutMs: 30_000 });
+}
+
+export async function vMouseDown(x: number, y: number, button: string): Promise<void> {
+  if (config.os === "macos") macOnlyNotice("mouse_down");
+  await helperCall({ op: "mouse_down", x, y, button });
+}
+
+export async function vMouseUp(x: number, y: number, button: string): Promise<void> {
+  if (config.os === "macos") macOnlyNotice("mouse_up");
+  await helperCall({ op: "mouse_up", x, y, button });
+}
+
 export async function vType(text: string): Promise<void> {
   if (config.os === "macos") macOnlyNotice("type_text");
   await helperCall({ op: "type", text }, { timeoutMs: 30_000 });
