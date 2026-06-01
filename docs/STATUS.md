@@ -9,6 +9,42 @@
 
 ## One-line state
 
+**✅ UNIVERSAL VISUAL LAYER COMPLETED + TIA OPENNESS ACCELERATOR ADDED (2026-05-31).** Reframed
+the product around its real purpose: **drive ANY Windows program purely visually** — TIA Portal is
+the motivating app, never a coupling. Two changes shipped this round (validated on SGRAHAM-MINI,
+pushed to `main`):
+
+1. **Universal visual core — `drag` added (helper v0.3.0).** The visual layer had no drag (mouse
+   input was click-only), blocking drag-drop / sliders / marquee-select / reordering on arbitrary
+   GUIs. Added `MouseDown`/`MouseUp` + an interpolated `drag` op to `windows/helper.ps1`, `vDrag`/
+   `vMouseDown`/`vMouseUp` in `src/visual.ts`, and `drag`/`mouse_down`/`mouse_up` MCP tools. **29
+   tools** now. Validated live: helper restarted to v0.3.0, `ping`→0.3.0, `drag` returned ok, fresh
+   screenshot captured (888x555).
+2. **OPTIONAL TIA Openness accelerator.** `windows/tia-openness.ps1` (a JSON-dispatch PowerShell
+   that loads `Siemens.Engineering.dll` via registry + AssemblyResolve, PS5.1-safe reflection for
+   generic `GetService<T>`) + `src/tia.ts` bridge + 9 `tia_*` MCP tools (status / open_project /
+   list_devices|blocks|tags / export_block / import_block / compile / **download [gated]**). It is
+   NOT a dependency — purely a fast-path for TIA. `tia_download` is gated (confirm:true + station,
+   human-approved, live push deferred to Phase-3 on the real box). Validated on the Mini:
+   `tia_status` → `{"ok":true,"openness_found":false,"in_openness_group":false}` (parses on PS5.1,
+   degrades gracefully where no TIA exists).
+
+**Design + plan:** `docs/superpowers/specs/2026-05-31-remote-tia-control-design.md` (universal-visual
+-first; Openness as optional accelerator) and the working notebook `docs/tia-recipes.md` (visual
+recipes + a **capability map to fill during Phase 0** on the production TIA box).
+
+**Targeting needs no code change:** `connect` already re-points host/user/identity at runtime, so the
+baked-in env (SGRAHAM-MINI) is just a default — call `connect({host,user,identityFile})` to drive the
+production TIA engineering PC when it's onboarded. The MCP server is also now registered at **user
+scope**, so its tools load in any session (not just the project dir).
+
+**▶ NEXT (Phase 0, on the production TIA box):** onboard it (`claude-control-setup`), add the operator
+to the `Siemens TIA Openness` group, run `tia_status` + a real `tia_open_project`/`tia_list_blocks`,
+resolve the cross-session-attach question, and fill in `docs/tia-recipes.md`'s capability map. Then
+Phase 2 (GUI recipes) + Phase 3 (orchestration + gated live download).
+
+### Prior state — SECOND TARGET LIVE, SGRAHAM-MINI (2026-05-31)
+
 **✅ SECOND TARGET LIVE — SGRAHAM-MINI (2026-05-31).** Provisioned + deployed + screenshotted the
 owner's Mini (`<winuser>@<tailscale-ip>`, Windows 11 build 26200, helper v0.2.0, 1408x881). MCP server
 registered with that target baked in, so a fresh Claude session loads `connect/screenshot/...`

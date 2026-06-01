@@ -6,8 +6,12 @@ import { buildServer } from "./server.js";
 
 const EXPECTED = [
   "connect", "status", "run", "upload", "download",
-  "screenshot", "click", "move", "scroll", "type_text", "press_keys",
+  "screenshot", "click", "move", "scroll", "drag", "mouse_down", "mouse_up",
+  "type_text", "press_keys",
   "ui_tree", "ui_find", "list_windows", "focus_window", "wait_idle", "bootstrap",
+  // Optional TIA Openness accelerator
+  "tia_status", "tia_open_project", "tia_list_devices", "tia_list_blocks",
+  "tia_list_tags", "tia_export_block", "tia_import_block", "tia_compile", "tia_download",
 ];
 
 const server = buildServer();
