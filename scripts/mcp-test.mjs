@@ -67,6 +67,12 @@ const img2 = shot2.content.find((c) => c.type === "image");
 if (img2) { writeFileSync("/tmp/cc-mcp-shot2.png", Buffer.from(img2.data, "base64")); console.log("saved /tmp/cc-mcp-shot2.png"); }
 console.log(firstText(await call("press_keys", { keys: "Escape" })));
 
+log("drag (universal visual primitive over MCP)");
+console.log(firstText(await call("drag", { x1: 320, y1: 320, x2: 440, y2: 400, steps: 12 })));
+
+log("tia_status (OPTIONAL Openness accelerator — expect openness_found:false on the Mini)");
+console.log(firstText(await call("tia_status")).slice(0, 300));
+
 log("error-path: bad tool args (expect clean validation error, not a crash)");
 try {
   const bad = await call("click", { x: "not-a-number" });
