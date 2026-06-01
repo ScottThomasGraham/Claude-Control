@@ -6,7 +6,29 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+- **`setup.mjs make-installer` — single-file Windows installer.** Generates one self-contained
+  `dist/claude-control-install.ps1` the operator drops on the target (RDP clipboard / share / USB)
+  and runs (right-click → Run with PowerShell; it self-elevates). It does the **entire Windows side**
+  from that one file: enable OpenSSH + authorize the controller key + firewall, install the visual
+  helper, and bootstrap it as a logon Scheduled Task — then prints **and** writes the `username`/IP to
+  `C:\ProgramData\ClaudeControl\claude-control-ready.txt`. `provision.ps1` + `helper.ps1` +
+  `bootstrap.ps1` are embedded as base64 (no network, no private-repo fetch, no here-string/quoting
+  fragility). A file beats a pasted command because the bytes arrive verbatim — immune to the
+  interactive-PowerShell quoting traps that broke `provision-cmd`. Validated: AST-parses clean on
+  Windows PowerShell 5.1 and all three embeds round-trip byte-exact.
+
 ### Fixed
+- **`setup.mjs provision-cmd` made paste-proof (from the SGRAHAM-MINI rollout, 2026-05-31):** the
+  Windows paste failed two ways. (1) The default form fetched `provision.ps1` from
+  `raw.githubusercontent.com`, which **404s because the repo is private**. (2) Both forms wrapped the
+  command in `powershell -Command "$k='…'; …"`; pasted into the *elevated PowerShell* the user is
+  told to open, the outer shell expanded `$k` (empty) before the child ran, producing a
+  `=ssh-ed25519…` "not recognized" error. `provision-cmd` now emits a single self-contained,
+  PowerShell-paste-safe block: the script is embedded in a here-string (no network, no private-repo
+  dependency) and invoked directly with the key passed as a single-quoted `-PubKey` literal (no
+  `$k`, no `powershell -Command` wrapper). The `--inline` flag is now redundant (always inline).
+
 - **Hardening from a full live TIA Portal V21 install run (helper v0.2.0):**
   - `helper.ps1`: sanitize control characters (C0 range + U+0085/U+2028/U+2029) out of UI Automation
     names/titles — Windows PowerShell 5.1's `ConvertTo-Json` doesn't escape these, so element names

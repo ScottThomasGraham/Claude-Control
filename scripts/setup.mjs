@@ -7,7 +7,8 @@
  *   node scripts/setup.mjs                 # guided: doctor -> keygen -> print the Windows paste
  *   node scripts/setup.mjs doctor [--host H --user U]
  *   node scripts/setup.mjs keygen
- *   node scripts/setup.mjs provision-cmd [--inline]
+ *   node scripts/setup.mjs provision-cmd     # self-contained, PowerShell-paste-safe
+ *   node scripts/setup.mjs make-installer    # write ONE .ps1 that does the whole Windows side
  *   node scripts/setup.mjs register --host H --user U [--identity PATH] [--helper-port N]
  *   node scripts/setup.mjs deploy   --host H --user U [--identity PATH] [--autologon]
  *
@@ -27,8 +28,6 @@ const WINDOWS_DIR = join(ROOT, "windows");
 const KEY = join(homedir(), ".ssh", "claude-control_ed25519");
 const HELPER_PORT_DEFAULT = 8765;
 const REMOTE_DIR = "C:/ProgramData/ClaudeControl";
-const RAW_PROVISION =
-  "https://raw.githubusercontent.com/ScottThomasGraham/Claude-Control/main/windows/provision.ps1";
 
 const c = { g: (s) => `\x1b[32m${s}\x1b[0m`, y: (s) => `\x1b[33m${s}\x1b[0m`, r: (s) => `\x1b[31m${s}\x1b[0m`, b: (s) => `\x1b[1m${s}\x1b[0m`, d: (s) => `\x1b[2m${s}\x1b[0m` };
 const ok = (s) => console.log(`${c.g("✓")} ${s}`);
@@ -89,20 +88,117 @@ function readPubKey() {
 
 function cmdProvisionCmd(args) {
   const pub = readPubKey();
+  const body = readFileSync(join(WINDOWS_DIR, "provision.ps1"), "utf8");
   head("Run this ONCE in an elevated PowerShell on the Windows target");
-  if (args.inline) {
-    const body = readFileSync(join(WINDOWS_DIR, "provision.ps1"), "utf8");
-    console.log(c.d("# self-contained (no internet needed on the target):\n"));
-    console.log("powershell -NoProfile -ExecutionPolicy Bypass -Command \"$k='" + pub + "'; & ([scriptblock]::Create(@'");
-    console.log(body);
-    console.log("'@)) -PubKey $k\"");
-  } else {
-    console.log(
-      `powershell -NoProfile -ExecutionPolicy Bypass -Command "$k='${pub}'; & ([scriptblock]::Create((irm '${RAW_PROVISION}'))) -PubKey $k"`,
-    );
-    console.log(c.d("\n(needs internet on the target to fetch provision.ps1; use --inline if it has none)"));
-  }
+  // Self-contained + PowerShell-paste-safe by design:
+  //   - no `powershell -Command "..."` wrapper, so it runs in the elevated PowerShell
+  //     window the user already has open (the instruction says "in PowerShell").
+  //   - no `$k=` variable: a `$k` inside a double-quoted -Command string gets expanded
+  //     by the *outer* interactive PowerShell before the child runs, mangling the key.
+  //     The pubkey is passed as a single-quoted literal straight to -PubKey instead.
+  //   - the script body is embedded in a here-string, so there is no network fetch —
+  //     this matters because the repo is PRIVATE (raw.githubusercontent.com 404s).
+  console.log(c.d("# Paste this whole block into an ELEVATED PowerShell on the target (no cmd, no internet):\n"));
+  console.log("& ([scriptblock]::Create(@'");
+  console.log(body);
+  console.log("'@)) -PubKey '" + pub + "'");
   console.log(c.d("\nIt prints 'username:' and an IP — read those back to finish setup."));
+}
+
+// Generate ONE self-contained .ps1 the operator drops on the target. Running it
+// (elevated) does the WHOLE Windows side: enable OpenSSH + authorize our key +
+// firewall (provision.ps1), install the visual helper, and bootstrap it as a logon
+// task (bootstrap.ps1). The three shipped scripts are embedded as base64 so there is
+// no network fetch and no here-string/quoting fragility regardless of their contents.
+function cmdMakeInstaller(args) {
+  const pub = readPubKey();
+  const helperPort = Number(args["helper-port"] || HELPER_PORT_DEFAULT);
+  const b64 = (f) => Buffer.from(readFileSync(join(WINDOWS_DIR, f), "utf8"), "utf8").toString("base64");
+  const provisionB64 = b64("provision.ps1");
+  const helperB64 = b64("helper.ps1");
+  const bootstrapB64 = b64("bootstrap.ps1");
+
+  const installer = `<#
+  Claude-Control — single-file installer (GENERATED; do not edit by hand).
+  Regenerate with:  node scripts/setup.mjs make-installer
+
+  WHAT IT DOES (the entire Windows side, from one file, no internet needed):
+    1. enables the OpenSSH server, authorizes the controller's public key, opens
+       inbound TCP/22 on all firewall profiles            (embedded provision.ps1)
+    2. installs the visual helper to C:\\ProgramData\\ClaudeControl   (embedded helper.ps1)
+    3. registers it as a logon Scheduled Task on a reserved port    (embedded bootstrap.ps1)
+  Then it prints — and saves to a file — the username + IP the controller needs.
+
+  HOW TO RUN on the target (either works):
+    * Right-click this file -> "Run with PowerShell"  (it self-elevates), or
+    * In an elevated PowerShell:  powershell -NoProfile -ExecutionPolicy Bypass -File .\\claude-control-install.ps1
+#>
+$ErrorActionPreference = 'Stop'
+
+# --- self-elevate if not already admin ---
+$principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)) {
+  Write-Host '[claude-control] not elevated - relaunching as administrator...'
+  if (-not $PSCommandPath) { throw 'Run this from the saved .ps1 file (right-click -> Run with PowerShell), not by pasting it.' }
+  Start-Process powershell -Verb RunAs -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$PSCommandPath)
+  return
+}
+
+$PubKey     = '${pub}'
+$HelperPort = ${helperPort}
+$Dir        = 'C:\\ProgramData\\ClaudeControl'
+function Decode([string]$b64) { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64)) }
+$provision = Decode('${provisionB64}')
+$helper    = Decode('${helperB64}')
+$bootstrap = Decode('${bootstrapB64}')
+
+Write-Host '[claude-control] (1/3) enabling OpenSSH + authorizing key + firewall...'
+& ([scriptblock]::Create($provision)) -PubKey $PubKey *>&1 | Tee-Object -Variable provOut | Out-Host
+
+Write-Host '[claude-control] (2/3) installing helper files to' $Dir '...'
+New-Item -ItemType Directory -Force -Path $Dir | Out-Null
+Set-Content -LiteralPath (Join-Path $Dir 'helper.ps1')    -Value $helper    -Encoding UTF8
+Set-Content -LiteralPath (Join-Path $Dir 'bootstrap.ps1') -Value $bootstrap -Encoding UTF8
+
+Write-Host '[claude-control] (3/3) registering logon task + starting helper...'
+& ([scriptblock]::Create($bootstrap)) -HelperPort $HelperPort -DisableIdleLock
+
+# --- surface + persist the connection details the controller needs ---
+$uname = ''
+$m = ($provOut | Out-String | Select-String 'username\\s*:\\s*(\\S+)')
+if ($m) { $uname = $m.Matches[0].Groups[1].Value }
+if (-not $uname) { $uname = $env:USERNAME }
+$ips = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPAddress -notlike '169.254*' -and $_.IPAddress -ne '127.0.0.1' } |
+        Select-Object -ExpandProperty IPAddress) -join ', '
+$ready = @"
+===================== CLAUDE-CONTROL: INSTALL COMPLETE =====================
+  username : $uname
+  computer : $env:COMPUTERNAME
+  IPv4     : $ips
+  helper   : 127.0.0.1:$HelperPort (logon Scheduled Task 'ClaudeControlHelper')
+  (Prefer a Tailscale 100.x.y.z address if this box is on a tailnet.)
+  Tell the 'username' and an IP to Claude on the Mac to finish setup.
+============================================================================
+"@
+Set-Content -LiteralPath (Join-Path $Dir 'claude-control-ready.txt') -Value $ready -Encoding UTF8
+Write-Host ''
+Write-Host $ready
+Write-Host "(also saved to $Dir\\claude-control-ready.txt)"
+if ($Host.Name -eq 'ConsoleHost') { Read-Host 'Press Enter to close' | Out-Null }
+`;
+
+  const out = args.out || join(ROOT, "dist", "claude-control-install.ps1");
+  mkdirSync(dirname(out), { recursive: true });
+  writeFileSync(out, installer, "utf8");
+  head("Single-file installer generated");
+  ok(`wrote ${out} (${(installer.length / 1024).toFixed(1)} KB, self-contained)`);
+  console.log(c.d("\nHand this file to the target however you like (RDP clipboard copy, share, USB)."));
+  console.log(c.d("On the Windows box: right-click -> Run with PowerShell (it self-elevates), or run"));
+  console.log(c.d("  powershell -NoProfile -ExecutionPolicy Bypass -File .\\claude-control-install.ps1"));
+  console.log(c.d("It prints + saves a 'username' and IP. Read those back, then on the Mac:"));
+  console.log(c.d("  node scripts/setup.mjs register --host <ip> --user <name>"));
+  console.log(c.d("  node scripts/setup.mjs deploy   --host <ip> --user <name>   # (verifies + proof screenshot)"));
 }
 
 function cmdRegister(args) {
@@ -230,11 +326,12 @@ try {
     case null: guided(); break;
     case "keygen": cmdKeygen(); break;
     case "provision-cmd": cmdProvisionCmd(args); break;
+    case "make-installer": cmdMakeInstaller(args); break;
     case "register": cmdRegister(args); break;
     case "deploy": await cmdDeploy(args); break;
     case "autologon": await enableAutologon(args); break;
     case "doctor": await cmdDoctor(args); break;
-    default: bad(`unknown command: ${cmd}`); console.log("commands: doctor | keygen | provision-cmd | register | deploy | autologon"); process.exit(2);
+    default: bad(`unknown command: ${cmd}`); console.log("commands: doctor | keygen | provision-cmd | make-installer | register | deploy | autologon"); process.exit(2);
   }
 } catch (e) {
   bad(e instanceof Error ? e.message : String(e));

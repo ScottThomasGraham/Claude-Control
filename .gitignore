@@ -2,6 +2,9 @@
 /node_modules
 /build
 
+# Generated single-file installer (per-key; regenerate with `setup.mjs make-installer`)
+/dist
+
 # Rust (original design exploration; kept for reference)
 /target
 **/target

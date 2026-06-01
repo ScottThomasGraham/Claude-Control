@@ -57,10 +57,26 @@ read values back, show the proof screenshot, keep it friendly. Run commands from
    "take a screenshot of the PC" or "open Notepad and type a note" in a session where the MCP server
    is attached (a fresh Claude Code session, since the server was just registered).
 
+## Easiest path: one self-contained file (when the user can drop a file on the target)
+
+If the operator can copy a file onto the Windows box (RDP clipboard, share, USB) rather than paste a
+command, prefer this — it's the most foolproof: no console quoting, no internet, no private-repo
+fetch. It does the WHOLE Windows side (provision + install helper + bootstrap) from one file.
+
+1. `node scripts/setup.mjs make-installer` → writes `dist/claude-control-install.ps1` (the operator's
+   public key + all three Windows scripts embedded as base64).
+2. Tell the user: copy that file to the target, then **right-click → Run with PowerShell** (it
+   self-elevates), or run `powershell -NoProfile -ExecutionPolicy Bypass -File .\claude-control-install.ps1`
+   in an elevated prompt. It prints **and** saves (`C:\ProgramData\ClaudeControl\claude-control-ready.txt`)
+   the `username` + IP.
+3. Collect the username + IP, then finish on the Mac with `register` + `deploy` (steps 5–6 above).
+
+The pasted-command path (`provision-cmd`) remains the fallback when the user can only paste text.
+
 ## Notes / guardrails
 
-- The Windows paste is the single irreducible manual step (it's the security boundary that lets SSH
-  in — you can't enable it remotely on a box you can't reach yet). Everything after it is automated.
+- The Windows installer/paste is the single irreducible manual step (it's the security boundary that
+  lets SSH in — you can't enable it remotely on a box you can't reach yet). Everything after it's automated.
 - Never write the user's Windows password to any file, the repo, or chat. SSH auth is key-only.
 - If a target is shared with you already provisioned, you can skip to step 5.
 - Full reference: `docs/SETUP.md`.

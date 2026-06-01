@@ -9,6 +9,31 @@
 
 ## One-line state
 
+**✅ SECOND TARGET LIVE — SGRAHAM-MINI (2026-05-31).** Provisioned + deployed + screenshotted the
+owner's Mini (`<winuser>@<tailscale-ip>`, Windows 11 build 26200, helper v0.2.0, 1408x881). MCP server
+registered with that target baked in, so a fresh Claude session loads `connect/screenshot/...`
+ready to go. Two **setup-tooling** bugs that made the Windows paste fail were fixed in the process
+(`scripts/setup.mjs cmdProvisionCmd`):
+- **Private-repo 404.** `provision-cmd` (non-`--inline`) fetched `provision.ps1` from
+  `raw.githubusercontent.com`, which **404s for a private repo**. Fixed: `provision-cmd` is now
+  always self-contained (script embedded in a here-string) — no fetch, no private-repo dependency.
+- **PowerShell-paste mangling.** The generated command used `$k='...'` inside a
+  `powershell -Command "..."` wrapper (cmd syntax). Pasted into the *elevated PowerShell* the
+  instructions tell the user to open, the outer shell expands `$k` (empty) first → `=ssh-ed25519…`
+  error. Fixed: drop the wrapper and the variable — run the scriptblock directly and pass the key
+  as a single-quoted literal to `-PubKey`. Paste-safe in an interactive PowerShell now.
+
+**New onboarding path for future boxes (2026-05-31):** `node scripts/setup.mjs make-installer`
+writes ONE self-contained `dist/claude-control-install.ps1` (key + provision/helper/bootstrap
+embedded as base64). Drop it on a target, right-click → Run with PowerShell (self-elevates), and it
+does the entire Windows side, then prints + saves the `username`/IP. Most foolproof option when the
+operator can copy a file (immune to the interactive-paste quoting traps). `provision-cmd` is the
+paste-only fallback. Installer AST-parses clean on PS 5.1 + embeds round-trip byte-exact.
+
+Remaining friction toward fully-unattended one-click: the helper only binds with an interactive
+logon, so a reboot with nobody logged in leaves `screenshot` unreachable until login. `setup.mjs
+autologon` (run by the owner, password never touches the Mac) closes that gap.
+
 **✅ FIRST LIVE RUN SUCCEEDED (2026-05-31).** The full visual loop is validated end-to-end against
 **THE-PC** (Windows 11 Pro, build 26200) over the Tailscale tailnet: connect → bootstrap →
 helper ping → **screenshot** → **ui_tree** (53 elements) → **keyboard input** (pressed Win, Start
