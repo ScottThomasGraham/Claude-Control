@@ -10,27 +10,17 @@
  *                                          type_text, press_keys, ui_tree, ui_find
  *   Setup:                                 connect, status, bootstrap
  */
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { config, setTarget, requireTarget, type TargetOs } from "./config.js";
+import { runRemote, scpUpload, type ExecResult } from "./ssh.js";
 import {
-  sshExec,
-  runPowerShell,
-  runRemote,
-  helperCall,
-  scpUpload,
-  type ExecResult,
-} from "./ssh.js";
-import {
-  vScreenshot, vMove, vClick, vScroll, vDrag, vMouseDown, vMouseUp, vType, vKeys, vUiTree, vUiFind,
-  vListWindows, vFocusWindow, vWaitIdle,
+  vScreenshot, vMove, vClick, vScroll, vDrag, vMouseDown, vMouseUp, vType, vKeys,
 } from "./visual.js";
+import { rdpConnect, rdpStatus } from "./rdp.js";
+import { ensureRdpEnabled } from "./rdpEnable.js";
+import { uiaTree, uiaFind, uiaListWindows, uiaFocusWindow } from "./uia.js";
 import { tiaCall } from "./tia.js";
-
-const WINDOWS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "windows");
-const REMOTE_DIR = "C:/ProgramData/ClaudeControl";
 
 type Content = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
 type ToolResult = { content: Content[]; isError?: boolean };
@@ -65,50 +55,63 @@ export function buildServer(): McpServer {
     {
       title: "Connect to a Windows target",
       description:
-        "Set the active Windows host (and verify reachability over SSH). Authentication uses your " +
-        "OS ssh keys / ssh-agent — no password is ever sent or stored. Run `bootstrap` once per " +
-        "machine to enable visual control.",
+        "Set the active target and bring up the live RDP session (I become the RDP client and hold it " +
+        "open — the desktop stays rendered with no human present). SSH auth uses your ssh keys; the RDP " +
+        "password comes from CLAUDE_CONTROL_RDP_PASSWORD (never written to disk). RDP is auto-enabled if off.",
       inputSchema: {
         host: z.string().describe("Hostname or IP of the target"),
-        user: z.string().describe("Username to log in as"),
+        user: z.string().describe("Username to log in as (RDP + SSH)"),
         os: z.enum(["windows", "macos"]).optional().describe("Target OS (default windows)"),
         port: z.number().int().optional().describe("SSH port (default 22)"),
-        identityFile: z.string().optional().describe("Path to a private key file (optional; uses ssh-agent otherwise)"),
-        helperPort: z.number().int().optional().describe("Loopback port the Windows visual helper listens on (default 8765)"),
+        identityFile: z.string().optional().describe("SSH private key path (optional; ssh-agent otherwise)"),
+        rdpPort: z.number().int().optional().describe("RDP port (default 3389)"),
+        rdpWidth: z.number().int().optional().describe("Desktop width to negotiate (default 1600)"),
+        rdpHeight: z.number().int().optional().describe("Desktop height to negotiate (default 900)"),
       },
     },
-    tool(async (a: { host: string; user: string; os?: TargetOs; port?: number; identityFile?: string; helperPort?: number }) => {
+    tool(async (a: { host: string; user: string; os?: TargetOs; port?: number; identityFile?: string; rdpPort?: number; rdpWidth?: number; rdpHeight?: number }) => {
       setTarget(a);
       const probe = config.os === "macos"
-        ? "hostname; uname -sr; sw_vers 2>/dev/null | tr '\\n' ' '"
+        ? "hostname; uname -sr"
         : "$env:COMPUTERNAME; [Environment]::OSVersion.VersionString";
       const r = await runRemote(probe, { timeoutMs: 20_000 });
-      if (r.code !== 0) return fail(`Config saved, but SSH check failed:\n${runResultText(r)}`);
-      return text(`Connected to ${a.user}@${a.host}:${a.port ?? config.port} (${config.os})\n${r.stdout.trim()}`);
+      if (r.code !== 0) return fail(`SSH check failed:\n${runResultText(r)}`);
+      if (config.os === "macos") {
+        return text(`Connected (macOS) to ${a.user}@${a.host}\n${r.stdout.trim()}`);
+      }
+      const en = await ensureRdpEnabled();
+      const st = await rdpConnect();
+      return text(
+        `Connected to ${a.user}@${a.host} (windows)\n${r.stdout.trim()}\n` +
+          `RDP: ${en.detail}\nRDP session live at ${st.width}x${st.height}.`,
+      );
     }),
   );
 
   server.registerTool(
     "status",
     {
-      title: "Show connection + helper status",
-      description: "Report the active target and whether the visual helper is reachable.",
+      title: "Show connection + RDP status",
+      description: "Report the active target and whether the live RDP session is up.",
       inputSchema: {},
     },
     tool(async () => {
       if (!config.host) return text("No target connected. Use `connect`.");
-      let helper = "unknown";
-      try {
-        const pong = await helperCall({ op: "ping" }, { timeoutMs: 12_000 });
-        helper = pong?.ok !== false ? `reachable (v${pong?.version ?? "?"})` : "not reachable";
-      } catch (e) {
-        helper = `not reachable (${e instanceof Error ? e.message : e}). Run \`bootstrap\`.`;
+      let rdp = "n/a (macOS target)";
+      if (config.os === "windows") {
+        try {
+          const s = await rdpStatus();
+          rdp = s.connected
+            ? `live ${s.width}x${s.height} (last frame ${s.lastFrameAgeMs}ms ago)`
+            : "not connected — call `connect`";
+        } catch (e) {
+          rdp = `not connected (${e instanceof Error ? e.message : e})`;
+        }
       }
       return text(
-        `target: ${config.user}@${config.host}:${config.port}\n` +
+        `target: ${config.user}@${config.host}  (ssh :${config.port}, rdp :${config.rdpPort})\n` +
           `identity: ${config.identityFile ?? "ssh-agent/default"}\n` +
-          `helper port: ${config.helperPort}\n` +
-          `visual helper: ${helper}`,
+          `RDP session: ${rdp}`,
       );
     }),
   );
@@ -306,10 +309,7 @@ export function buildServer(): McpServer {
         maxElements: z.number().int().optional().describe("Cap on returned elements (default 200)"),
       },
     },
-    tool(async (a: { maxElements?: number }) => {
-      const els = await vUiTree(a.maxElements ?? 200);
-      return text(JSON.stringify(els, null, 2));
-    }),
+    tool(async (a: { maxElements?: number }) => text(JSON.stringify(await uiaTree(a.maxElements ?? 200), null, 2))),
   );
 
   server.registerTool(
@@ -319,10 +319,7 @@ export function buildServer(): McpServer {
       description: "Find UI Automation elements whose name contains the given text; returns matches with center coordinates.",
       inputSchema: { text: z.string() },
     },
-    tool(async (a: { text: string }) => {
-      const matches = await vUiFind(a.text);
-      return text(JSON.stringify(matches, null, 2));
-    }),
+    tool(async (a: { text: string }) => text(JSON.stringify(await uiaFind(a.text), null, 2))),
   );
 
   // ---- Windows GUI driving (heavy apps: TIA Portal, Studio 5000) ---------
@@ -333,7 +330,7 @@ export function buildServer(): McpServer {
       description: "List visible top-level windows with titles and positions — useful to orient inside multi-window apps like TIA Portal / Studio 5000. (Windows only.)",
       inputSchema: {},
     },
-    tool(async () => text(JSON.stringify(await vListWindows(), null, 2))),
+    tool(async () => text(JSON.stringify(await uiaListWindows(), null, 2))),
   );
 
   server.registerTool(
@@ -344,7 +341,7 @@ export function buildServer(): McpServer {
       inputSchema: { title: z.string().describe("Substring of the window title, e.g. 'TIA Portal' or 'Studio 5000'") },
     },
     tool(async (a: { title: string }) => {
-      const found = await vFocusWindow(a.title);
+      const found = await uiaFocusWindow(a.title);
       return found ? text(`Focused window matching "${a.title}"`) : fail(`No visible window matching "${a.title}"`);
     }),
   );
@@ -360,8 +357,17 @@ export function buildServer(): McpServer {
       },
     },
     tool(async (a: { timeoutMs?: number; settleMs?: number }) => {
-      const idle = await vWaitIdle(a.timeoutMs ?? 60_000, a.settleMs ?? 1_500);
-      return idle ? text("Screen is idle.") : text("Timed out before the screen settled.");
+      const { rdpFrame } = await import("./rdp.js");
+      const timeoutMs = a.timeoutMs ?? 60_000, settleMs = a.settleMs ?? 1_500;
+      const start = Date.now();
+      let last = (await rdpFrame()).png, lastChange = Date.now();
+      while (Date.now() - start < timeoutMs) {
+        await new Promise((r) => setTimeout(r, 300));
+        const cur = (await rdpFrame()).png;
+        if (cur !== last) { last = cur; lastChange = Date.now(); }
+        else if (Date.now() - lastChange >= settleMs) return text("Screen is idle.");
+      }
+      return text("Timed out before the screen settled.");
     }),
   );
 
@@ -483,48 +489,6 @@ export function buildServer(): McpServer {
       },
     },
     tool(async (a: { station: string; confirm: true; plc?: string; path?: string }) => tiaText(await tiaCall("download", a))),
-  );
-
-  // ---- Setup: bootstrap --------------------------------------------------
-  server.registerTool(
-    "bootstrap",
-    {
-      title: "Set up the target for visual control",
-      description:
-        "Push the PowerShell helper to the target and register it to run in the interactive desktop session " +
-        "(a logon Scheduled Task), then start it. Optionally enable RDP. Run once per machine. " +
-        "Requires that the connected account is an administrator.",
-      inputSchema: {
-        enableRdp: z.boolean().optional().describe("Also enable Remote Desktop for human viewing (default false)"),
-      },
-    },
-    tool(async (a: { enableRdp?: boolean }) => {
-      requireTarget();
-      // 1) ensure remote dir
-      const mk = await runPowerShell(`New-Item -ItemType Directory -Force -Path '${REMOTE_DIR}' | Out-Null; '${REMOTE_DIR}'`);
-      if (mk.code !== 0) return fail(`Could not create ${REMOTE_DIR}:\n${runResultText(mk)}`);
-      // 2) push scripts
-      for (const f of ["helper.ps1", "bootstrap.ps1", "tia-openness.ps1"]) {
-        const up = await scpUpload(join(WINDOWS_DIR, f), `${REMOTE_DIR}/${f}`);
-        if (up.code !== 0) return fail(`Failed to upload ${f}:\n${runResultText(up)}`);
-      }
-      // 3) run bootstrap.ps1 (registers + starts the helper task; optionally enables RDP)
-      const rdpFlag = a.enableRdp ? "-EnableRdp" : "";
-      const cmd =
-        `powershell -NoProfile -ExecutionPolicy Bypass -File ${REMOTE_DIR}/bootstrap.ps1 ` +
-        `-HelperPort ${config.helperPort} ${rdpFlag}`;
-      const r = await sshExec(cmd, { timeoutMs: 90_000 });
-      if (r.code !== 0) return fail(`bootstrap.ps1 failed:\n${runResultText(r)}`);
-      // 4) verify helper
-      let helperState = "registered (will start at next logon)";
-      try {
-        const pong = await helperCall({ op: "ping" }, { timeoutMs: 12_000 });
-        if (pong?.ok !== false) helperState = `running (v${pong?.version ?? "?"})`;
-      } catch {
-        /* not yet reachable; task is registered */
-      }
-      return text(`Bootstrap complete.\n${runResultText(r)}\n\nvisual helper: ${helperState}`);
-    }),
   );
 
   return server;
