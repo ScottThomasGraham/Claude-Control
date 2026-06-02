@@ -28,20 +28,27 @@ async function runWalk(find = "", maxElements = 200): Promise<any[]> {
   requireTarget();
   await scpUpload(join(WINDOWS_DIR, "uia-accelerator.ps1"), SCRIPT);
   const argLine = `-File ${SCRIPT} -Out ${OUT} -MaxElements ${maxElements}` + (find ? ` -Find '${find.replace(/'/g, "''")}'` : "");
+  // argLine is embedded inside an outer PowerShell single-quoted string (-Argument '...'),
+  // so every ' must be doubled again for that layer.
+  const outerArgLine = argLine.replace(/'/g, "''");
   // Register a one-shot task running as the interactive user, run it now, wait, read, clean up.
   const ps = `
 $ErrorActionPreference='Stop'
 $u = (Get-CimInstance Win32_ComputerSystem).UserName
 if (-not $u) { $u = (quser 2>$null | Select-Object -Skip 1 | ForEach-Object { ($_ -replace '^>?\\s*','').Split(' ')[0] } | Select-Object -First 1) ; if ($u) { $u = "$env:COMPUTERNAME\\$u" } }
 Remove-Item '${OUT}' -ErrorAction SilentlyContinue
-$a = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -ExecutionPolicy Bypass ${argLine}'
+$a = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -ExecutionPolicy Bypass ${outerArgLine}'
 $p = New-ScheduledTaskPrincipal -UserId $u -LogonType Interactive -RunLevel Highest
-Register-ScheduledTask -TaskName '${TASK}' -Action $a -Principal $p -Force | Out-Null
-Start-ScheduledTask -TaskName '${TASK}'
-$deadline=(Get-Date).AddSeconds(20)
-while (-not (Test-Path '${OUT}') -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 300 }
-Unregister-ScheduledTask -TaskName '${TASK}' -Confirm:$false -ErrorAction SilentlyContinue
-if (Test-Path '${OUT}') { Get-Content -Raw '${OUT}'; Remove-Item '${OUT}' -ErrorAction SilentlyContinue } else { '[]' }
+try {
+  Register-ScheduledTask -TaskName '${TASK}' -Action $a -Principal $p -Force | Out-Null
+  Start-ScheduledTask -TaskName '${TASK}'
+  $deadline=(Get-Date).AddSeconds(20)
+  while (-not (Test-Path '${OUT}') -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 300 }
+  if (Test-Path '${OUT}') { Get-Content -Raw '${OUT}' } else { '[]' }
+} finally {
+  Unregister-ScheduledTask -TaskName '${TASK}' -Confirm:$false -ErrorAction SilentlyContinue
+  Remove-Item '${OUT}' -ErrorAction SilentlyContinue
+}
 `;
   const r = await runPowerShell(ps, { timeoutMs: 40_000 });
   if (r.code !== 0) throw new Error(`UIA accelerator failed:\n${r.stderr || r.stdout}`);
@@ -63,8 +70,9 @@ export async function uiaListWindows(): Promise<any[]> {
 }
 export async function uiaFocusWindow(title: string): Promise<boolean> {
   if (!enabled()) offNotice("focus_window");
-  // Vision-first focus: find the window's title-bar element and click it.
-  const m = (await runWalk(title, 200)).find((e) => e.type === "Window") ?? (await runWalk(title, 200))[0];
+  // Vision-first focus: find a matching window element (or any matching element) and click its center.
+  const results = await runWalk(title, 200);
+  const m = results.find((e) => e.type === "Window") ?? results[0];
   if (!m) return false;
   const { rdpClick } = await import("./rdp.js");
   await rdpClick(m.x, m.y, "left", false);
