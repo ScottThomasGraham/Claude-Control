@@ -12,7 +12,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { config, setTarget, requireTarget, type TargetOs } from "./config.js";
+import { config, setTarget, type TargetOs } from "./config.js";
 import { runRemote, scpUpload, type ExecResult } from "./ssh.js";
 import {
   vScreenshot, vMove, vClick, vScroll, vDrag, vMouseDown, vMouseUp, vType, vKeys,
