@@ -32,18 +32,21 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc::{self, UnboundedSender};
 use tokio::task::JoinHandle;
 
+use ironrdp::core::WriteBuf;
 use ironrdp_async::Framed;
+use ironrdp_connector::connection_activation::ConnectionActivationState;
 use ironrdp_connector::{
-    ClientConnector, Config as ConnectorConfig, Credentials, DesktopSize,
+    ClientConnector, Config as ConnectorConfig, Credentials, DesktopSize, Sequence as _,
 };
 use ironrdp_graphics::image_processing::PixelFormat;
 use ironrdp_input::{Database, MouseButton, MousePosition, Operation, Scancode, WheelRotations};
 use ironrdp_pdu::gcc::KeyboardType;
 use ironrdp_pdu::rdp::capability_sets::MajorPlatformType;
 use ironrdp_pdu::rdp::client_info::{PerformanceFlags, TimezoneInfo};
+use ironrdp_session::fast_path::ProcessorBuilder as FastPathProcessorBuilder;
 use ironrdp_session::image::DecodedImage;
 use ironrdp_session::{ActiveStage, ActiveStageOutput};
-use ironrdp_tokio::{reqwest::ReqwestNetworkClient, TokioStream};
+use ironrdp_tokio::{reqwest::ReqwestNetworkClient, single_sequence_step, TokioStream};
 use tokio_rustls::rustls;
 
 use crate::Shared;
@@ -177,6 +180,13 @@ async fn session_task(
 ) {
     let mut db = Database::new();
 
+    // Opt-in stderr tracing (NEVER stdout — stdout is the IPC channel; we never
+    // log the password). Checked once at task entry. Enable with CC_RDP_DEBUG=1.
+    let debug = std::env::var("CC_RDP_DEBUG").is_ok();
+    if debug {
+        eprintln!("[cc-rdp][dbg] session_task started");
+    }
+
     loop {
         tokio::select! {
             // Server → client: graphics / control PDUs.
@@ -188,6 +198,9 @@ async fn session_task(
                         break;
                     }
                 };
+                if debug {
+                    eprintln!("[cc-rdp][dbg] read_pdu action={action:?} len={}", payload.len());
+                }
 
                 let outputs = match active_stage.process(&mut image, action, &payload) {
                     Ok(o) => o,
@@ -199,6 +212,9 @@ async fn session_task(
 
                 let mut graphics_changed = false;
                 for out in outputs {
+                    if debug {
+                        eprintln!("[cc-rdp][dbg] output={}", active_stage_output_name(&out));
+                    }
                     match out {
                         ActiveStageOutput::ResponseFrame(frame) => {
                             if let Err(e) = write_all(&mut framed, &frame).await {
@@ -213,11 +229,122 @@ async fn session_task(
                             eprintln!("[cc-rdp] server terminated session: {reason}");
                             return mark_disconnected(&state).await;
                         }
+                        // Windows servers send ServerDeactivateAll during session
+                        // bring-up (MS-RDPBCGR §1.3.1.3 Deactivation-Reactivation).
+                        // IronRDP hands us a fresh ConnectionActivationSequence that
+                        // we MUST drive to Finalized (re-running capabilities exchange
+                        // + connection finalization) before the server will send any
+                        // graphics. Dropping this is the original "blank framebuffer
+                        // forever" bug. We keep the SAME ActiveStage (matching the
+                        // upstream ironrdp-client) and only rebuild its fast-path
+                        // processor + share/pointer state from the finalized values.
+                        ActiveStageOutput::DeactivateAll(mut cas) => {
+                            if debug {
+                                eprintln!("[cc-rdp][dbg] DeactivateAll: driving reactivation");
+                            }
+                            // Drive the carried sequence to Finalized against the SAME
+                            // framed stream (single_sequence_step does read+write).
+                            let mut buf = WriteBuf::new();
+                            let finalized = loop {
+                                if debug {
+                                    eprintln!(
+                                        "[cc-rdp][dbg] reactivation step state={}",
+                                        cas.state().name()
+                                    );
+                                }
+                                if let Err(e) =
+                                    single_sequence_step(&mut framed, &mut *cas, &mut buf).await
+                                {
+                                    eprintln!(
+                                        "[cc-rdp] reactivation sequence step error: {e}; session ending"
+                                    );
+                                    return mark_disconnected(&state).await;
+                                }
+                                if let ConnectionActivationState::Finalized {
+                                    io_channel_id,
+                                    user_channel_id,
+                                    desktop_size,
+                                    share_id,
+                                    enable_server_pointer,
+                                    pointer_software_rendering,
+                                } = cas.connection_activation_state()
+                                {
+                                    break (
+                                        io_channel_id,
+                                        user_channel_id,
+                                        desktop_size,
+                                        share_id,
+                                        enable_server_pointer,
+                                        pointer_software_rendering,
+                                    );
+                                }
+                            };
+                            let (
+                                io_channel_id,
+                                user_channel_id,
+                                desktop_size,
+                                share_id,
+                                enable_server_pointer,
+                                pointer_software_rendering,
+                            ) = finalized;
+
+                            // Rebuild the fast-path processor + share/pointer state on
+                            // the existing ActiveStage so processing resumes in the
+                            // reactivated session. (Mirrors ironrdp-client's
+                            // set_fastpath_processor / set_share_id / set_enable_server_pointer.)
+                            // NOTE: bulk_decompressor is None here because compression
+                            // is not negotiated in this client (compression_type=None);
+                            // matches upstream which also passes None in this path.
+                            active_stage.set_fastpath_processor(
+                                FastPathProcessorBuilder {
+                                    io_channel_id,
+                                    user_channel_id,
+                                    share_id,
+                                    enable_server_pointer,
+                                    pointer_software_rendering,
+                                    bulk_decompressor: None,
+                                }
+                                .build(),
+                            );
+                            active_stage.set_share_id(share_id);
+                            active_stage.set_enable_server_pointer(enable_server_pointer);
+
+                            // Resize the decoded image + shared framebuffer to the
+                            // newly negotiated desktop size.
+                            image = DecodedImage::new(
+                                PixelFormat::RgbA32,
+                                desktop_size.width,
+                                desktop_size.height,
+                            );
+                            {
+                                let mut st = state.lock().await;
+                                st.fb = crate::Framebuffer::blank(
+                                    u32::from(desktop_size.width),
+                                    u32::from(desktop_size.height),
+                                );
+                            }
+                            if debug {
+                                eprintln!(
+                                    "[cc-rdp][dbg] reactivation finalized {}x{}",
+                                    desktop_size.width, desktop_size.height
+                                );
+                            }
+                            // LIVE-RUN MUST CONFIRM: after this point the server begins
+                            // sending FastPath/X224 graphics and the framebuffer repaints
+                            // (status.last_update advances). Continue the loop — do NOT break.
+                        }
                         _ => {}
                     }
                 }
 
                 if graphics_changed {
+                    if debug {
+                        eprintln!(
+                            "[cc-rdp][dbg] copy_image_to_framebuffer {}x{}",
+                            image.width(),
+                            image.height()
+                        );
+                    }
                     copy_image_to_framebuffer(&state, &image).await;
                 }
             }
@@ -255,6 +382,25 @@ async fn session_task(
     }
 
     mark_disconnected(&state).await;
+}
+
+/// Short variant name for an `ActiveStageOutput`, for CC_RDP_DEBUG tracing.
+///
+/// NOTE: ironrdp-session 0.9.0 does NOT expose `ActiveStageOutput::description()`
+/// (that method lives on `GracefulDisconnectReason`), so we name variants here.
+fn active_stage_output_name(out: &ActiveStageOutput) -> &'static str {
+    match out {
+        ActiveStageOutput::ResponseFrame(_) => "ResponseFrame",
+        ActiveStageOutput::GraphicsUpdate(_) => "GraphicsUpdate",
+        ActiveStageOutput::PointerDefault => "PointerDefault",
+        ActiveStageOutput::PointerHidden => "PointerHidden",
+        ActiveStageOutput::PointerPosition { .. } => "PointerPosition",
+        ActiveStageOutput::PointerBitmap(_) => "PointerBitmap",
+        ActiveStageOutput::Terminate(_) => "Terminate",
+        ActiveStageOutput::DeactivateAll(_) => "DeactivateAll",
+        ActiveStageOutput::MultitransportRequest(_) => "MultitransportRequest",
+        ActiveStageOutput::AutoDetect(_) => "AutoDetect",
+    }
 }
 
 async fn mark_disconnected(state: &Shared) {
