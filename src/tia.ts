@@ -3,7 +3,7 @@
  *
  * Runs windows/tia-openness.ps1 on the target over SSH and parses its single
  * JSON line. This is a convenience fast-path for TIA only — the universal visual
- * layer (visual.ts / helper.ps1) drives TIA and every other program without it.
+ * layer (visual.ts / the RDP plane) drives TIA and every other program without it.
  *
  * The dispatcher script is uploaded to C:/ProgramData/ClaudeControl/ once per
  * server process (idempotent), so `tia_*` works even before `bootstrap`.

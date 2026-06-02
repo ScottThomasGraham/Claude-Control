@@ -11,7 +11,7 @@
  *   node scripts/cc.mjs focus "<title>"
  *   node scripts/cc.mjs waitidle [timeoutMs] [settleMs]
  * Target comes from env: CLAUDE_CONTROL_HOST and CLAUDE_CONTROL_USER are
- * required; CLAUDE_CONTROL_IDENTITY / CLAUDE_CONTROL_HELPER_PORT are optional.
+ * required; CLAUDE_CONTROL_IDENTITY is optional.
  *   CLAUDE_CONTROL_HOST=1.2.3.4 CLAUDE_CONTROL_USER=me node scripts/cc.mjs shot
  */
 import { writeFileSync } from "node:fs";
@@ -30,7 +30,6 @@ setTarget({
   user: process.env.CLAUDE_CONTROL_USER,
   os: "windows",
   identityFile: process.env.CLAUDE_CONTROL_IDENTITY ?? `${process.env.HOME}/.ssh/claude-control_ed25519`,
-  helperPort: Number(process.env.CLAUDE_CONTROL_HELPER_PORT ?? 49705),
 });
 
 const [op, ...rest] = process.argv.slice(2);
