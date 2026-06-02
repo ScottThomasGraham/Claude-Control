@@ -24,7 +24,10 @@ let child: ChildProcess | null = null;
 let decoder: FrameDecoder | null = null;
 let nextId = 1;
 const pending = new Map<number, Pending>();
+// Retained in memory for a future reconnect-after-crash path; never logged or persisted.
 let lastConnectArgs: object | null = null;
+// Serializes concurrent rdpConnect() calls so we never spawn two sidecars.
+let connecting: Promise<RdpStatus> | null = null;
 
 function rejectAllPending(err: Error): void {
   for (const [, p] of pending) p.reject(err);
@@ -32,6 +35,7 @@ function rejectAllPending(err: Error): void {
 }
 
 function spawnSidecar(): void {
+  if (child) return; // already running — never spawn a second child
   // CLAUDE_CONTROL_RDP_SIDECAR_ARGS lets tests run `node mock-sidecar.mjs`.
   const extra = process.env.CLAUDE_CONTROL_RDP_SIDECAR_ARGS;
   const args = extra ? extra.split(" ") : [];
@@ -78,15 +82,23 @@ function call(cmd: string, args: object = {}, timeoutMs = 30_000): Promise<any> 
 
 /** Bring up (or re-use) the sidecar and connect it to the active target. */
 export async function rdpConnect(): Promise<RdpStatus> {
-  const { host, user } = requireTarget();
-  if (!child) spawnSidecar();
-  lastConnectArgs = {
-    host, port: config.rdpPort, username: user,
-    password: requireRdpPassword(),
-    width: config.rdpWidth, height: config.rdpHeight,
-  };
-  const r = await call("connect", lastConnectArgs, 45_000);
-  return { connected: true, since: 0, width: r.width, height: r.height, lastFrameAgeMs: 0 };
+  if (connecting) return connecting;
+  connecting = (async () => {
+    const { host, user } = requireTarget();
+    if (!child) spawnSidecar();
+    lastConnectArgs = {
+      host, port: config.rdpPort, username: user,
+      password: requireRdpPassword(),
+      width: config.rdpWidth, height: config.rdpHeight,
+    };
+    const r = await call("connect", lastConnectArgs, 45_000);
+    return { connected: true, since: 0, width: r.width, height: r.height, lastFrameAgeMs: 0 };
+  })();
+  try {
+    return await connecting;
+  } finally {
+    connecting = null;
+  }
 }
 
 export async function rdpFrame(): Promise<Frame> { return call("frame", {}, 30_000); }
