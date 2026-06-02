@@ -13,6 +13,17 @@
 //
 // Public seam consumed by main.rs (kept stable across phases):
 //   ConnectParams / SessionHandle / connect / SessionHandle::{pointer,key,shutdown}
+//
+// TODO(task11): the full path below compiles cleanly but has NOT been run
+// against a live RDP server (none was available in Task 10). Verify against a
+// real Windows host:
+//   - CredSSP/NLA handshake succeeds with the supplied username/password.
+//   - GraphicsUpdates actually repaint the shared framebuffer (frame PNGs show
+//     the live desktop, not the blank fallback).
+//   - pointer + scancode/unicode input land on the remote desktop.
+//   - consider auto-reconnect with backoff in session_task on read errors
+//     (currently the task exits and marks disconnected; main re-connects on the
+//     next `connect` call).
 
 use std::sync::Arc;
 
