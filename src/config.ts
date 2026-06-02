@@ -1,28 +1,41 @@
+// src/config.ts
 /**
  * Connection configuration for the active target.
  *
  * Held only in memory for the lifetime of the MCP server process. Secrets are
- * NEVER stored here or written to disk — authentication is delegated entirely to
- * the OS `ssh` client (ssh-agent / default identity / an identity FILE path the
- * user points at). We only keep host/user/port and the helper's loopback port.
+ * NEVER stored here or written to disk. SSH auth is delegated to the OS `ssh`
+ * client (ssh-agent / identity file). The RDP password is read from the
+ * environment at connect time and passed straight to the sidecar in memory.
  */
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
 export type TargetOs = "windows" | "macos";
 
 export interface ConnConfig {
   host?: string;
   user?: string;
-  port: number;
-  /** Target operating system — selects PowerShell vs shell, and the visual backend. */
+  port: number;            // SSH port
   os: TargetOs;
-  /** Optional path to a private key file. If unset, ssh-agent / default keys are used. */
-  identityFile?: string;
-  /** Loopback TCP port the Windows interactive-session helper listens on. */
-  helperPort: number;
+  identityFile?: string;   // SSH key path (optional; ssh-agent otherwise)
+  rdpPort: number;         // RDP port (default 3389)
+  rdpWidth: number;        // negotiated desktop width
+  rdpHeight: number;       // negotiated desktop height
+  sidecarPath: string;     // path to the RDP sidecar binary (overridable for tests)
 }
 
 function envOs(): TargetOs {
   return process.env.CLAUDE_CONTROL_OS === "macos" ? "macos" : "windows";
 }
+
+const DEFAULT_SIDECAR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "sidecar",
+  "target",
+  "release",
+  "cc-rdp",
+);
 
 export const config: ConnConfig = {
   host: process.env.CLAUDE_CONTROL_HOST,
@@ -30,7 +43,10 @@ export const config: ConnConfig = {
   port: Number(process.env.CLAUDE_CONTROL_PORT ?? 22),
   os: envOs(),
   identityFile: process.env.CLAUDE_CONTROL_IDENTITY,
-  helperPort: Number(process.env.CLAUDE_CONTROL_HELPER_PORT ?? 8765),
+  rdpPort: Number(process.env.CLAUDE_CONTROL_RDP_PORT ?? 3389),
+  rdpWidth: Number(process.env.CLAUDE_CONTROL_RDP_WIDTH ?? 1600),
+  rdpHeight: Number(process.env.CLAUDE_CONTROL_RDP_HEIGHT ?? 900),
+  sidecarPath: process.env.CLAUDE_CONTROL_RDP_SIDECAR ?? DEFAULT_SIDECAR,
 };
 
 export function setTarget(p: {
@@ -39,14 +55,18 @@ export function setTarget(p: {
   port?: number;
   os?: TargetOs;
   identityFile?: string;
-  helperPort?: number;
+  rdpPort?: number;
+  rdpWidth?: number;
+  rdpHeight?: number;
 }): void {
   config.host = p.host;
   config.user = p.user;
   if (p.port !== undefined) config.port = p.port;
   if (p.os !== undefined) config.os = p.os;
   if (p.identityFile !== undefined) config.identityFile = p.identityFile;
-  if (p.helperPort !== undefined) config.helperPort = p.helperPort;
+  if (p.rdpPort !== undefined) config.rdpPort = p.rdpPort;
+  if (p.rdpWidth !== undefined) config.rdpWidth = p.rdpWidth;
+  if (p.rdpHeight !== undefined) config.rdpHeight = p.rdpHeight;
 }
 
 export function requireTarget(): { host: string; user: string } {
@@ -57,4 +77,16 @@ export function requireTarget(): { host: string; user: string } {
     );
   }
   return { host: config.host, user: config.user };
+}
+
+/** The RDP password — env only, never persisted. Throws a clear error if missing. */
+export function requireRdpPassword(): string {
+  const pw = process.env.CLAUDE_CONTROL_RDP_PASSWORD;
+  if (!pw) {
+    throw new Error(
+      "RDP password not set. Export CLAUDE_CONTROL_RDP_PASSWORD (never written to disk) " +
+        "before connecting — RDP/NLA cannot use an SSH key.",
+    );
+  }
+  return pw;
 }
