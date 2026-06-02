@@ -261,15 +261,22 @@ async fn cmd_connect(state: &Shared, a: ConnectArgs) -> Result<serde_json::Value
 }
 
 async fn cmd_frame(state: &Shared) -> Result<serde_json::Value> {
-    let st = state.lock().await;
-    if !st.connected {
-        return Err(anyhow::anyhow!("not connected"));
-    }
-    let width = st.fb.width;
-    let height = st.fb.height;
-    let age_ms = st.fb.last_update.elapsed().as_millis() as u64;
+    // Copy the framebuffer out under the lock, then release it before the
+    // (potentially slow) PNG encode so the graphics task isn't blocked.
+    let (width, height, age_ms, rgba) = {
+        let st = state.lock().await;
+        if !st.connected {
+            return Err(anyhow::anyhow!("not connected"));
+        }
+        (
+            st.fb.width,
+            st.fb.height,
+            st.fb.last_update.elapsed().as_millis() as u64,
+            st.fb.rgba.clone(),
+        )
+    };
 
-    let png = encode_png(width, height, &st.fb.rgba)?;
+    let png = encode_png(width, height, &rgba)?;
     let b64 = base64_encode(&png);
 
     Ok(json!({ "png": b64, "width": width, "height": height, "ageMs": age_ms }))
