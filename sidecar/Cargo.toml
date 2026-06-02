@@ -17,5 +17,20 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "io-
 image = { version = "0.25", default-features = false, features = ["png"] }
 base64 = "0.22"
 
+# IronRDP suite (real versions resolved by cargo, NOT the plan's guesses):
+#   ironrdp 0.15, connector/session/async/tokio 0.9, graphics/pdu 0.8, input 0.6
+ironrdp = { version = "0.15.0", features = ["connector", "session", "graphics", "input", "pdu", "svc"] }
+ironrdp-connector = "0.9.0"
+ironrdp-session = "0.9.0"
+ironrdp-graphics = "0.8.0"
+ironrdp-input = "0.6.0"
+ironrdp-pdu = "0.8.0"
+ironrdp-async = "0.9.0"
+ironrdp-tokio = { version = "0.9.0", features = ["reqwest", "reqwest-rustls-ring"] }
+tokio-rustls = "0.26.4"
+rustls = { version = "0.23.40", features = ["ring"] }
+x509-cert = "0.2"
+bytes = "1"
+
 [profile.release]
 opt-level = 2

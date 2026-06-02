@@ -223,7 +223,18 @@ async fn cmd_connect(state: &Shared, a: ConnectArgs) -> Result<serde_json::Value
         height,
     };
 
-    let session = rdp::connect(state.clone(), connect_params).await;
+    // Bound the live connect so an unreachable/bad host fails fast and falls
+    // back to a blank framebuffer instead of blocking the IPC loop. The Node
+    // side's own connect timeout is 45s; stay comfortably under it.
+    let session = match tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        rdp::connect(state.clone(), connect_params),
+    )
+    .await
+    {
+        Ok(r) => r,
+        Err(_) => Err(anyhow::anyhow!("RDP connect timed out after 20s")),
+    };
 
     let mut st = state.lock().await;
     match session {
