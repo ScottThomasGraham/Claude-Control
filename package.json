@@ -19,6 +19,7 @@
   "engines": { "node": ">=20" },
   "scripts": {
     "build": "tsc && node -e \"import('node:fs').then(f=>f.chmodSync('build/index.js',0o755))\"",
+    "build:sidecar": "cd sidecar && $HOME/.cargo/bin/cargo build --release",
     "watch": "tsc --watch",
     "smoke": "node build/smoke.js",
     "prepare": "npm run build",
