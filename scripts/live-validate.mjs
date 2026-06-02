@@ -79,21 +79,27 @@ try {
   } catch (e) { fail("rdpConnect", e); throw e; }
 
   // 3) HEADLINE: capture a frame with no human connected.
-  log("3. Capture frame (no human session present)");
+  //    Give the server time to complete reactivation (DeactivateAll sequence)
+  //    and send the initial desktop paint. frameAge tells us if it repainted:
+  //    a small ageMs means a GraphicsUpdate landed; ageMs ~= time-since-connect
+  //    means it never painted.
+  log("3. Capture frame (no human session present) — settling 3.5s for first paint");
+  await new Promise((s) => setTimeout(s, 3500));
   try {
     const f = await rdpFrame();
     writeFileSync("/tmp/cc-rdp-shot.png", Buffer.from(f.png, "base64"));
     console.log(`   saved /tmp/cc-rdp-shot.png  ${f.width}x${f.height}  (${Math.round(f.png.length * 0.75 / 1024)} KB)  frameAge=${f.ageMs}ms`);
+    if (f.ageMs > 3000) console.log("   ⚠ frameAge is large — framebuffer may not have repainted yet");
   } catch (e) { fail("rdpFrame#1", e); }
 
   // 4) Input proof: Ctrl+Esc opens Start, capture, Escape closes it.
-  log("4. Input test: Ctrl+Esc (open Start) -> frame -> Escape");
+  log("4. Input test: Ctrl+Esc (open Start) -> wait 2.5s -> frame -> Escape");
   try {
     await rdpChord("Ctrl+Esc");
-    await new Promise((s) => setTimeout(s, 1500));
+    await new Promise((s) => setTimeout(s, 2500));
     const f2 = await rdpFrame();
     writeFileSync("/tmp/cc-rdp-shot2.png", Buffer.from(f2.png, "base64"));
-    console.log(`   saved /tmp/cc-rdp-shot2.png  ${f2.width}x${f2.height}`);
+    console.log(`   saved /tmp/cc-rdp-shot2.png  ${f2.width}x${f2.height}  frameAge=${f2.ageMs}ms`);
     await rdpChord("Escape");
     console.log("   pressed Escape to close Start");
   } catch (e) { fail("input test", e); }
