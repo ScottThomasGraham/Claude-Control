@@ -3,8 +3,9 @@
 
   An OPTIONAL fast-path for driving TIA Portal via Siemens' official Openness API
   (Siemens.Engineering.dll). It is NOT required: the universal visual layer
-  (helper.ps1) drives TIA -- and any other program -- purely visually. This script
-  only adds a scriptable API path for the PLC/project operations Openness exposes.
+  (the RDP visual layer) drives TIA -- and any other program -- purely visually.
+  This script only adds a scriptable API path for the PLC/project operations
+  Openness exposes.
 
   Contract: invoked over SSH as
       powershell ... -File tia-openness.ps1 -Op <name> -ArgsB64 <base64-utf8-json>
