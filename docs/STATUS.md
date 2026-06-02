@@ -1,20 +1,44 @@
 # STATUS — resume here
 
-**Last updated:** 2026-06-01
-**For a fresh Claude session:** read this file first, then the spec and plan:
+**Last updated:** 2026-06-02
+**For a fresh Claude session:** read [`README.md`](../README.md) "▶ RESUME HERE" first (it has the exact
+next command), then this file, then the spec and plan:
 - [`docs/superpowers/specs/2026-06-01-rdp-client-remote-control-design.md`](superpowers/specs/2026-06-01-rdp-client-remote-control-design.md)
 - [`docs/superpowers/plans/2026-06-01-rdp-client-plane.md`](superpowers/plans/2026-06-01-rdp-client-plane.md)
 
 ---
 
+## ⏳ CURRENT STATE (2026-06-02) — one live re-run away from done
+
+Code-complete (all 12 plan tasks) and the RDP **connection works live** against the Mini (NLA/CredSSP
+auth + capability negotiation succeed, desktop negotiated 1600×900, no human logged in). The first
+live run showed a **blank framebuffer** — connection fine but no graphics painted. **Root cause found
+and fixed (commit `c35ebdc`):** the server sends `ServerDeactivateAll` during bring-up and the sidecar
+was dropping the `ActiveStageOutput::DeactivateAll` reactivation; we now drive the
+`ConnectionActivationSequence` to `Finalized` and resume (matches upstream IronRDP client). Added
+`CC_RDP_DEBUG=1` stderr tracing.
+
+**NEXT (the only open step):** owner runs, in their own terminal —
+```
+cd ~/Projects/Claude-Control && npm run build:sidecar && \
+  CC_RDP_DEBUG=1 node scripts/live-validate.mjs 100.73.195.110 uksti ~/.ssh/claude-control_ed25519
+```
+— password at the hidden prompt. Confirm the `[cc-rdp]` trace shows `DeactivateAll → reactivation
+finalized → GraphicsUpdate/copy_image_to_framebuffer` with small `frameAge`, and that
+`/tmp/cc-rdp-shot.png` is the live desktop (+ `shot2.png` the Start menu). If good → run the final
+holistic review + `superpowers:finishing-a-development-branch` to land `feat/rdp-client-plane`. If the
+trace shows a different failure, README's "▶ RESUME HERE" lists how to interpret each case.
+
+---
+
 ## One-line state
 
-**RDP-client model shipped (2026-06-01) — all tasks complete, all checks green.**
+**RDP-client model built (2026-06-01/02); connection live-verified; graphics fix awaiting one re-run.**
 
 The MCP server is now itself the RDP client: a Rust sidecar (`sidecar/cc-rdp`, built with IronRDP)
-holds a live RDP session to the target 24/7. Screen capture and input work with no human present.
-SSH remains the speed plane (run/upload/download/tia_* go over SSH for speed). An optional
-UIA accelerator covers `ui_tree`/`ui_find` (set `CLAUDE_CONTROL_UIA=1`). Zero target footprint
+holds a live RDP session to the target 24/7. Screen capture and input are designed to work with no
+human present. SSH remains the speed plane (run/upload/download/tia_* go over SSH for speed). An
+optional UIA accelerator covers `ui_tree`/`ui_find` (set `CLAUDE_CONTROL_UIA=1`). Zero target footprint
 beyond RDP being enabled — and RDP is auto-enabled over SSH during the first `connect` call
 (`src/rdpEnable.ts :: ensureRdpEnabled`).
 

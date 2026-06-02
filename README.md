@@ -1,267 +1,98 @@
 <h1 align="center">Claude-Control</h1>
 
-<p align="center"><em>Give Claude Code hands on a remote Windows PC — over SSH, using only what Windows already ships.</em></p>
+<p align="center"><em>Give Claude hands and eyes on a remote Windows PC — by becoming the RDP client itself, with SSH as a fast side-channel. Zero software installed on the target.</em></p>
 
 ---
 
-> ### ✅ Status: working & validated end-to-end (2026-05-31)
-> 17-tool MCP server, validated on a live Windows 11 Pro target over Tailscale — connect → bootstrap →
-> screenshot → read the UI tree → click → type, plus driving real GUI apps (opened Word, and
-> downloaded + installed + launched Siemens TIA Portal V21 across two reboots). macOS targets support
-> run/upload/download/screenshot today; input + AX-tree are pending a Mac target.
+## ▶ RESUME HERE (read this first)
 
----
+**Branch:** `feat/rdp-client-plane`  ·  **Last worked:** 2026-06-02  ·  **Detailed runbook:** [`docs/STATUS.md`](docs/STATUS.md)
 
-## Get started (2 steps)
+**Where we are:** The whole RDP-client rewrite is built, reviewed, and committed. All 12 plan tasks are code-complete; build/unit-tests/smoke are green; the Rust IronRDP sidecar compiles. **Live against the real Mini, the RDP connection works** (NLA/CredSSP auth + capability negotiation succeed, desktop negotiated at 1600×900 with no human logged in).
 
-**On your Mac** — clone and run the guided setup:
+**The one open item:** on the first live run the framebuffer came back **blank** — connection fine, but no graphics ever painted. Root-caused: the server sends a `ServerDeactivateAll` PDU during session bring-up and the sidecar was silently dropping the `ActiveStageOutput::DeactivateAll` reactivation. **Fix committed (`c35ebdc`)** — we now drive the `ConnectionActivationSequence` to `Finalized` and resume (matches the upstream IronRDP client). **It is awaiting one live re-run to confirm graphics now paint.**
+
+**To pick up exactly where we left off — have the owner run (in their own terminal, password typed at the hidden prompt, never stored):**
 
 ```bash
-git clone https://github.com/ScottThomasGraham/Claude-Control.git
-cd Claude-Control && npm install && npm run build
-node scripts/setup.mjs            # generates a key + prints ONE command to paste on Windows
+cd ~/Projects/Claude-Control && npm run build:sidecar && \
+  CC_RDP_DEBUG=1 node scripts/live-validate.mjs 100.73.195.110 uksti ~/.ssh/claude-control_ed25519
 ```
 
-Or, inside a Claude Code session opened on this repo, just run the bundled command:
+Then read the pasted `[cc-rdp]` trace + inspect `/tmp/cc-rdp-shot.png` (should be the live desktop) and `/tmp/cc-rdp-shot2.png` (Start menu, proving input). Interpreting the trace:
+- `DeactivateAll → reactivation finalized 1600x900 → GraphicsUpdate/copy_image_to_framebuffer` lines + small `frameAge` → **fixed.** Verify the screenshots, then run the final holistic review and land the branch (`superpowers:finishing-a-development-branch`).
+- `DeactivateAll` but still no `GraphicsUpdate` → reactivation not fully resuming (per-step state names show where).
+- No `DeactivateAll`, PDUs arriving, no graphics → codec/compression path, not reactivation.
+- No PDUs at all → read pump isn't being driven.
 
-```
-/claude-control-setup
-```
+**Target (the Mini):** `uksti@100.73.195.110` (Tailscale), SSH key `~/.ssh/claude-control_ed25519`, Windows 11 build 26200, RDP already enabled (port 3389 open). RDP password is supplied at runtime via `CLAUDE_CONTROL_RDP_PASSWORD` (or the hidden prompt) — **never written to disk.**
 
-…and Claude walks you through it.
-
-**On the Windows machine you want to control** — paste the single line `setup.mjs` printed into an
-**elevated** PowerShell (Run as administrator) and run it. It enables SSH, authorizes your key, and
-opens the firewall, then prints a `username` and IP.
-
-That's it. Tell Claude the host + username and it finishes everything — connects, installs the visual
-helper, and (optionally) enables autologon so reboots auto-recover. Full reference:
-[`docs/SETUP.md`](docs/SETUP.md).
-
-> **Why one paste on Windows?** Claude-Control drives a *remote* machine, and you can't enable SSH on
-> a box you can't reach yet — that paste is the security boundary that lets the tool in. Everything
-> after it is automated.
+**Design + plan (source of truth for intent):**
+- Spec: [`docs/superpowers/specs/2026-06-01-rdp-client-remote-control-design.md`](docs/superpowers/specs/2026-06-01-rdp-client-remote-control-design.md)
+- Plan: [`docs/superpowers/plans/2026-06-01-rdp-client-plane.md`](docs/superpowers/plans/2026-06-01-rdp-client-plane.md)
 
 ---
 
-## Overview
+## What it is
 
-This is the desktop-control counterpart to **Claude-Browser**. Where Claude-Browser lets an AI drive
-a web browser, **Claude-Control lets Claude Code fully operate a remote computer** — run commands,
-see the screen, click, type, and read the on-screen UI — like sitting at the machine.
+Claude-Control is an **MCP server** (Node/TypeScript) that lets Claude operate a remote **Windows** machine. The breakthrough vs. the old design: instead of installing an in-session helper on the target, **the MCP server *becomes the RDP client*** and holds the session open continuously. Because an RDP session stays rendered as long as a client holds it — and RDP manufactures its own virtual display — this works on a **headless / VM / no-monitor box with no human present**, and the desktop is always there to see and drive. Footprint on the target is essentially zero (the only prerequisite is that RDP is enabled, which we auto-enable over SSH).
 
-It's built for the hard case: **GUI software that can't be scripted** — e.g. Siemens **TIA Portal**
-or Rockwell **Studio 5000**. There's no API to call, so you operate the interface: screenshot to
-see, the UI Automation tree for a semantic map of those dense engineering windows, and click/type to
-work. Targets can be **Windows** (full visual + UI Automation) or **macOS** (run/files + screenshot
-today; input/AX-tree landing once validated on a Mac target).
+**Two planes, one coordinator:**
+- **RDP plane (vision + input)** — a small **Rust sidecar** (`sidecar/`, built on [IronRDP](https://github.com/Devolutions/IronRDP)) that the Node server spawns and talks to over a length-prefixed-JSON stdio IPC. It connects, holds the session, decodes the framebuffer (PNG on demand), and injects mouse/keyboard.
+- **SSH plane (speed)** — the OS `ssh`/`scp` for fast headless work: `run`, `upload`, `download`, the optional TIA Openness accelerator, and the one-time RDP-enable.
+- **Optional UIA accelerator** (off by default; `CLAUDE_CONTROL_UIA=1`) — for dense enterprise UIs, runs a transient one-shot UI-Automation walk *inside* the live RDP session and cleans up. Vision-first otherwise.
 
-It ships as an **MCP server**, so it attaches to *anyone's* local Claude Code in one line. And it
-leans entirely on **OS-preinstalled tools**: the `ssh`/`scp` already on your Mac, and **OpenSSH +
-PowerShell + .NET** already on Windows. **Nothing is compiled or installed on the target** — no agent
-binary, no drivers, no RDP stack to maintain. The "agent" that sees and clicks is a PowerShell script
-that uses Windows' own screen-capture, input, and UI Automation APIs.
+## Status
 
-The design principle: **use the cheapest channel that does the job.**
-
-- **Headless (SSH + PowerShell):** run commands, move files, manage the box — instant, scriptable, no
-  GUI needed. This is most of the work.
-- **Visual (the helper):** when a task needs eyes and clicks, a tiny PowerShell helper running in the
-  desktop session returns **screenshots** and performs **mouse/keyboard** input.
-- **Semantic (UI Automation):** instead of guessing from pixels, ask Windows for the **element tree**
-  — every control's type, name, and click-ready coordinates.
-
----
-
-## How it works
-
-```
-   Your Mac (Claude Code)                          Windows PC (the target)
- ┌─────────────────────────┐      SSH (OpenSSH)   ┌────────────────────────────────┐
- │  claude-control (MCP)   │───── powershell ─────▶│  PowerShell + .NET             │
- │   • run / upload / ...  │      scp files        │   • commands, files            │
- │   • screenshot / click  │                       │                                │
- │   • type / press_keys   │   helper (loopback,   │  helper.ps1 (logon task,       │
- │   • ui_tree / ui_find   │◀── relayed over SSH ──│   interactive session):        │
- │                         │                       │   screen capture · SendInput · │
- └─────────────────────────┘                       │   UI Automation tree           │
-                                                    └────────────────────────────────┘
-```
-
-Authentication is your **OS ssh keys** — no password is ever sent or stored. The helper binds
-**loopback only** and is reached *through* the SSH connection, so nothing new is exposed on the
-network.
-
----
-
-## Quick start (manual / under the hood)
-
-> Most people should use **[Get started (2 steps)](#get-started-2-steps)** or `/claude-control-setup`
-> above — `scripts/setup.mjs` automates everything below. This section documents the same steps by
-> hand, for understanding or for environments where you'd rather not run the script.
-
-Do these in order. Steps 1–3 are on **your Mac**; step 4 is the one manual step on the **Windows
-target**; steps 5–6 are back on the Mac (Claude Code can do them for you).
-
-1. **Clone & build** (needs Node ≥ 20, and the `ssh`/`scp` that ship with macOS):
-   ```bash
-   git clone https://github.com/ScottThomasGraham/Claude-Control.git
-   cd Claude-Control && npm install && npm run build && npm run smoke   # smoke should print "SMOKE OK"
-   ```
-2. **Make a dedicated SSH key** for this (keeps it separate from your other keys):
-   ```bash
-   ssh-keygen -t ed25519 -f ~/.ssh/claude-control_ed25519 -C "claude-control" -N ""
-   cat ~/.ssh/claude-control_ed25519.pub   # copy this — you paste it on Windows in step 3
-   ```
-3. **One-time Windows setup** — run the elevated-PowerShell block in [Install → step 3](#install)
-   on the target (enables OpenSSH, authorizes your key, opens the firewall on **all** profiles).
-   Note the username it prints at the end; you need it. The target must be reachable from your Mac —
-   same LAN, or a VPN/mesh like [Tailscale](https://tailscale.com) (recommended; works anywhere).
-4. **Sanity-check the connection** from the Mac (this is the exact path the server uses):
-   ```bash
-   ssh -i ~/.ssh/claude-control_ed25519 <win-user>@<host> 'powershell -NoProfile -Command "$env:COMPUTERNAME"'
-   ```
-   > If this times out but the host pings, it's almost always the firewall — see
-   > [Gotchas](#gotchas-hard-won-lessons). `nc -vz <host> 22` tells you if port 22 is really open;
-   > don't trust bash's `/dev/tcp`, which can report false negatives.
-5. **Attach to Claude Code** (see [Install → step 2](#install)), then in a Claude Code session say:
-   *"connect to `<host>` as `<win-user>` with identity `~/.ssh/claude-control_ed25519`, then bootstrap."*
-   The `connect` tool verifies SSH; `bootstrap` installs the visual helper into your desktop session.
-6. **Try it:** *"take a screenshot."* If it returns an image, you're done. To watch live while Claude
-   drives, RDP into the **same** Windows user/session and leave the window connected.
-
-A brand-new Claude Code working from this repo has everything it needs: the steps above, the
-[Tools](#tools) table, and [Gotchas](#gotchas-hard-won-lessons). For project history and the
-validation record, see [`docs/STATUS.md`](docs/STATUS.md).
-
----
-
-## Install
-
-**1. Build (or install) the server.**
-
-```bash
-git clone https://github.com/ScottThomasGraham/Claude-Control.git
-cd Claude-Control && npm install && npm run build
-```
-
-**2. Attach it to Claude Code.**
-
-```bash
-claude mcp add claude-control -- node /absolute/path/to/Claude-Control/build/index.js
-# (once published to npm:  claude mcp add claude-control -- npx -y claude-control-mcp )
-```
-
-Optionally pre-set a default target so Claude can connect immediately:
-
-```bash
-claude mcp add claude-control \
-  --env CLAUDE_CONTROL_HOST=sgraham-mini \
-  --env CLAUDE_CONTROL_USER=<windows-user> \
-  --env CLAUDE_CONTROL_IDENTITY=$HOME/.ssh/claude-control_ed25519 \
-  -- node /absolute/path/to/Claude-Control/build/index.js
-```
-
-**3. One-time setup on the Windows PC** (the only manual step — it's the security boundary that lets
-the tool in). In an **elevated PowerShell** on the target, enable OpenSSH and authorize your key:
-
-```powershell
-# Enable OpenSSH Server
-Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
-Set-Service sshd -StartupType Automatic; Start-Service sshd
-# Allow inbound 22 on ALL profiles. The capability's own rule is sometimes scoped to
-# "Private" only, which silently blocks a Tailscale/Public interface — so add an explicit one.
-New-NetFirewallRule -Name sshd-allprofiles -DisplayName 'OpenSSH Server (all profiles)' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 -Profile Any
-# Default shell = PowerShell
-New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -PropertyType String -Force | Out-Null
-# Authorize your Claude-Control public key (admin accounts use this shared file)
-$pub = '<PASTE YOUR ~/.ssh/claude-control_ed25519.pub HERE>'
-$f = "$env:ProgramData\ssh\administrators_authorized_keys"
-Add-Content -Path $f -Value $pub
-icacls.exe $f /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F" | Out-Null
-"username: $env:USERNAME"
-```
-
-Then, from Claude Code, ask it to **`bootstrap`** the host once — that installs the visual helper
-(screenshot/click/UIA) into your desktop session. After that, everything is automatic.
-
----
-
-## Tools
-
-| Tool | What it does |
+| Layer | State |
 |---|---|
-| `connect` | Set the active host + OS (`windows`/`macos`) + verify SSH (keys only). |
-| `status` | Show the target and whether the visual helper is live. |
-| `run` | Run a command (PowerShell on Windows, sh on macOS); returns stdout/stderr/exit. |
-| `upload` / `download` | Copy files via scp. |
-| `screenshot` | PNG of the live desktop (returned as an image). |
-| `click` / `move` / `scroll` | Mouse control at pixel coordinates. |
-| `type_text` / `press_keys` | Keyboard: text and chords (`Ctrl+S`, `Alt+Tab`, `Win+R`). |
-| `ui_tree` / `ui_find` | UI Automation elements with click-ready coordinates. |
-| `list_windows` / `focus_window` | Orient and switch between windows in big multi-window apps. |
-| `wait_idle` | Block until the screen stops changing — e.g. after a TIA compile/download. |
-| `bootstrap` | Install the interactive-session helper (logon task), reserve its port, restart-on-failure; flags: `-EnableRdp`, `-DisableIdleLock`, `-Uninstall`. |
+| Node/TS RDP plane (IPC, keymap, config, rdp plane, rdp-enable, visual, server, UIA) | ✅ built, **14/14 unit tests**, `npm run smoke` green (28 tools) |
+| Rust IronRDP sidecar (`sidecar/cc-rdp`) | ✅ compiles warning-free; IPC verified against the live binary |
+| Live RDP **connection** (auth + negotiate, no human present) | ✅ verified against the Mini |
+| Live **graphics paint** | ⏳ fix committed (`c35ebdc`), **awaiting one live re-run** (see Resume block) |
+| Old in-session helper (`helper.ps1`/`bootstrap`) | ❌ removed |
 
-Coordinates are consistent everywhere: `ui_tree` centers feed straight into `click`. The visual,
-`ui_*`, and window tools are Windows-first; on macOS, `run`/`upload`/`download`/`screenshot` work
-today and the rest return a clear notice until validated on a Mac target.
+## Build & test (no hardware needed)
 
----
+```bash
+npm install
+npm run build          # tsc -> build/
+npm run build:sidecar  # cargo build --release -> sidecar/target/release/cc-rdp  (needs Rust toolchain)
+npm run smoke          # MCP tool registry check
+node --test test/ipc.test.mjs test/keymap.test.mjs test/rdp-plane.test.mjs   # 14 unit tests (vs a mock sidecar)
+```
 
-## Gotchas (hard-won lessons)
+Requires Node ≥20 and a Rust toolchain (rustup). The unit tests exercise the Node RDP plane against a mock sidecar — no real RDP server required.
 
-Things that bit us on the first real run — worth knowing up front:
+## Repo layout
 
-- **Port 22 closed even though the host pings?** Windows often scopes the OpenSSH firewall rule to
-  the **Private** profile, while a Tailscale/VPN adapter gets classified **Public** — so SSH is
-  silently blocked. Add an all-profiles rule: `New-NetFirewallRule -Name sshd-allprofiles -Enabled
-  True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 -Profile Any`. Also: bash's
-  `/dev/tcp` can report a false "closed" — verify with `nc -vz <host> 22` or a real `ssh`.
-- **Launch GUI apps with keystrokes, not `Start-Process`.** A command run over SSH executes in
-  **session 0** (the service session), so `Start-Process winword` opens Word *invisibly* there, not
-  on the desktop. To open an app where the helper can see it, drive the desktop: `press_keys "Win"`,
-  `type_text "Word"`, `press_keys "Enter"` (or use `Win+R` and type the path). Same root cause as
-  why the helper must run as a logon task, not a service.
-- **Helper only binds while someone is logged in.** The helper lives in the interactive desktop
-  session (logon Scheduled Task). If `screenshot` says the helper is unreachable but `run` works,
-  no one is logged in — log in (or enable autologon). A **disconnected** RDP session keeps the
-  helper alive; **logging off** kills it.
-- **Watching live = RDP to the same user/session.** Reconnect as the same Windows user and you land
-  in the very session Claude drives. Keep the window connected; if the desktop isn't being rendered
-  anywhere, captures can go stale/black. Expect to share the cursor — take turns.
-- **Screen size follows the RDP client.** Screenshot dimensions track whatever the RDP session is
-  currently sized to. That's fine — `ui_tree`/`ui_find` coordinates are always in the same space as
-  the matching screenshot, so clicks land correctly. (Also: RDP'ing in and **disconnecting** leaves
-  the console session **locked** — captures fail with "handle is invalid" until you reconnect or
-  reboot. `bootstrap -DisableIdleLock` reduces this.)
-- **Helper port is a low static port (8765), reserved persistently.** After a reboot, Windows/WinNAT
-  reserve chunks of the ephemeral range (49152–65535), so a high helper port (e.g. 49705) can fail to
-  bind with `WSAEACCES` ("socket access forbidden"). `bootstrap` defaults to **8765** and reserves it
-  via `netsh ... add excludedportrange`, so reboots don't break it.
-- **For unattended / bulletproof reboots, enable autologon.** The helper only starts at *logon*. With
-  autologon on, a reboot auto-logs-in the user → the helper's logon task restarts → control returns
-  with zero manual steps (validated end-to-end installing TIA Portal across two reboots). Use
-  Sysinternals **Autologon** (stores the password as an encrypted LSA secret — never plaintext in the
-  registry). `bootstrap` also sets restart-on-failure on the helper task.
+```
+src/
+  ipc.ts          length-prefixed JSON framing (Node side of the sidecar IPC)
+  keymap.ts       chord/text -> RDP key events (scancodes / unicode)
+  config.ts       in-memory target config (RDP host/port/size, sidecar path); secrets never persisted
+  rdp.ts          the RDP plane: spawn/supervise sidecar, frame/pointer/keys/status, click/drag/type
+  rdpEnable.ts    auto-enable RDP on the target over SSH (idempotent, leave-on)
+  ssh.ts          OS ssh/scp transport (run/upload/download/runPowerShell)
+  visual.ts       OS dispatcher: Windows -> rdp.ts; macOS -> screencapture
+  uia.ts          optional opt-in UIA accelerator (transient, in the live session)
+  server.ts       MCP server: registers all tools (connect/status/run/screenshot/click/.../tia_*)
+  tia.ts          optional Siemens TIA Openness accelerator
+sidecar/          Rust IronRDP client sidecar (cc-rdp): proto.rs (IPC), rdp.rs (session), main.rs
+windows/          provision.ps1 (SSH+key onboarding), uia-accelerator.ps1, tia-openness.ps1
+scripts/          setup.mjs (onboarding), cc.mjs (CLI), live-validate.mjs (live RDP harness)
+test/             node:test unit tests + mock-sidecar.mjs
+docs/             STATUS.md (resume runbook) + superpowers/specs + superpowers/plans
+```
 
----
+## Onboarding a new target (RDP era)
 
-## Security
+1. **SSH + key:** `node scripts/setup.mjs provision-cmd` prints a one-liner to paste into an elevated PowerShell on the target (enables OpenSSH, authorizes the key, opens the firewall).
+2. **Register the MCP server:** `node scripts/setup.mjs register --host <ip> --user <user>` runs `claude mcp add` with `CLAUDE_CONTROL_HOST/USER/IDENTITY`.
+3. **Connect:** call the `connect` tool (host + user). It auto-enables RDP over SSH if needed and brings up the live session. The RDP **password** is read at runtime from `CLAUDE_CONTROL_RDP_PASSWORD` — never baked into any command or file.
 
-OS ssh keys only — no passwords sent or stored · helper binds loopback and is reached through SSH ·
-the helper runs at the user's privilege level; only `bootstrap` needs admin · `bootstrap -Uninstall`
-removes the task, helper, and files cleanly · the target runs only Microsoft-shipped code.
+## Security notes
 
----
-
-## Project docs
-
-Design history and the original (pre-pivot) Rust/RDP exploration live under
-[`docs/`](docs/) — see [`docs/architecture/implemented-architecture.md`](docs/architecture/implemented-architecture.md)
-for why the shipped design is SSH + PowerShell rather than a hand-rolled RDP client, and
-[`docs/research/`](docs/research/) for the sourced feasibility research that informed it.
-
-## License
-
-Dual-licensed under [Apache-2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT), at your option.
+- **No passwords on disk, ever.** SSH uses your key; the RDP password comes only from the environment / a hidden prompt and lives in process memory.
+- RDP TLS currently uses a permissive cert verifier (standard for self-signed RDP hosts) — flag for any production hardening pass.
+- License: MIT OR Apache-2.0.
