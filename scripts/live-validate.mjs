@@ -1,88 +1,113 @@
 /**
- * Live end-to-end validation against a real target, driving the SHIPPED code
- * (the same functions the MCP tools call). Not part of the package — a manual
- * resume/validation harness. Usage:
- *   node scripts/live-validate.mjs <host> <user> <identityFile> [helperPort]
+ * Live end-to-end validation of the RDP plane against a real Windows target,
+ * driving the SHIPPED code (the same functions the MCP tools call). Not part of
+ * the package — a manual resume/validation harness.
+ *
+ * Usage:
+ *   node scripts/live-validate.mjs <host> <user> [identityFile]
+ *
+ * The RDP password is read from CLAUDE_CONTROL_RDP_PASSWORD if set, otherwise it
+ * is prompted for WITHOUT echo. It is held only in this process's memory (set on
+ * process.env for rdpConnect to read) and is NEVER written to disk or logged —
+ * and because it is prompted (not a CLI arg) it never lands in shell history.
+ *
+ * Headline check: a real screenshot of the Mini captured with NO human RDP
+ * session present — the exact case that used to fail with "handle is invalid".
  */
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
 import { writeFileSync } from "node:fs";
-import { config, setTarget } from "../build/config.js";
-import { sshExec, runPowerShell, scpUpload, helperCall } from "../build/ssh.js";
-import { vScreenshot, vUiTree, vKeys } from "../build/visual.js";
+import { createInterface } from "node:readline";
+import { setTarget, config } from "../build/config.js";
+import { ensureRdpEnabled } from "../build/rdpEnable.js";
+import {
+  rdpConnect, rdpFrame, rdpChord, rdpClick, rdpStatus, rdpShutdown,
+} from "../build/rdp.js";
 
-const [host, user, identityFile, helperPort = "49705"] = process.argv.slice(2);
-const WINDOWS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "windows");
-const REMOTE_DIR = "C:/ProgramData/ClaudeControl";
+const [host, user, identityFile] = process.argv.slice(2);
+if (!host || !user) {
+  console.error("Usage: node scripts/live-validate.mjs <host> <user> [identityFile]");
+  process.exit(2);
+}
 const log = (m) => console.log(`\n=== ${m} ===`);
 
-setTarget({ host, user, os: "windows", identityFile, helperPort: Number(helperPort) });
-
-// 1) probe
-log("1. SSH probe");
-let r = await sshExec(`powershell -NoProfile -Command "Write-Output $env:COMPUTERNAME"`, { timeoutMs: 20000 });
-console.log("computer:", r.stdout.trim(), "| exit", r.code);
-
-// 2) bootstrap: mkdir, push scripts, run bootstrap.ps1
-log("2. Bootstrap (mkdir + scp helper/bootstrap + register logon task)");
-r = await runPowerShell(`New-Item -ItemType Directory -Force -Path '${REMOTE_DIR}' | Out-Null; '${REMOTE_DIR}'`);
-console.log("mkdir exit", r.code, r.stdout.trim());
-for (const f of ["helper.ps1", "bootstrap.ps1"]) {
-  const up = await scpUpload(join(WINDOWS_DIR, f), `${REMOTE_DIR}/${f}`);
-  console.log(`scp ${f} -> exit`, up.code, up.stderr.trim());
+/** Prompt for a secret on the TTY without echoing keystrokes. */
+function promptHidden(query) {
+  return new Promise((resolve) => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+    const onData = () => {
+      // Re-draw just the prompt so typed characters never appear.
+      if (process.stdout.clearLine) {
+        process.stdout.clearLine(0);
+        process.stdout.cursorTo(0);
+        process.stdout.write(query);
+      }
+    };
+    process.stdin.on("data", onData);
+    rl.question(query, (value) => {
+      process.stdin.removeListener("data", onData);
+      rl.close();
+      process.stdout.write("\n");
+      resolve(value);
+    });
+  });
 }
-r = await sshExec(
-  `powershell -NoProfile -ExecutionPolicy Bypass -File ${REMOTE_DIR}/bootstrap.ps1 -HelperPort ${helperPort}`,
-  { timeoutMs: 90000 },
-);
-console.log("bootstrap.ps1 exit", r.code);
-console.log(r.stdout.trim());
-if (r.stderr.trim()) console.log("stderr:", r.stderr.trim());
 
-// 3) helper ping (status)
-log("3. Helper ping");
+setTarget({ host, user, os: "windows", identityFile });
+
+// Source the RDP password (env first, else hidden prompt). In-memory only.
+if (!process.env.CLAUDE_CONTROL_RDP_PASSWORD) {
+  const pw = await promptHidden(`RDP password for ${user}@${host} (hidden): `);
+  if (!pw) { console.error("No password entered."); process.exit(2); }
+  process.env.CLAUDE_CONTROL_RDP_PASSWORD = pw;
+}
+
+let failed = false;
+const fail = (step, e) => { failed = true; console.log(`✗ ${step} FAILED:`, e?.message ?? e); };
+
 try {
-  const pong = await helperCall({ op: "ping" }, { timeoutMs: 12000 });
-  console.log("ping:", JSON.stringify(pong));
-} catch (e) {
-  console.log("ping FAILED:", e.message);
+  // 1) Ensure RDP is reachable (auto-enable over SSH if off; leave on).
+  log("1. Ensure RDP enabled (over SSH)");
+  try {
+    const en = await ensureRdpEnabled();
+    console.log("  ", JSON.stringify(en));
+  } catch (e) { fail("ensureRdpEnabled", e); }
+
+  // 2) Connect: become the RDP client and hold the session live.
+  log("2. RDP connect (become the client, hold the session)");
+  try {
+    const st = await rdpConnect();
+    console.log(`   connected — live ${st.width}x${st.height}`);
+  } catch (e) { fail("rdpConnect", e); throw e; }
+
+  // 3) HEADLINE: capture a frame with no human connected.
+  log("3. Capture frame (no human session present)");
+  try {
+    const f = await rdpFrame();
+    writeFileSync("/tmp/cc-rdp-shot.png", Buffer.from(f.png, "base64"));
+    console.log(`   saved /tmp/cc-rdp-shot.png  ${f.width}x${f.height}  (${Math.round(f.png.length * 0.75 / 1024)} KB)  frameAge=${f.ageMs}ms`);
+  } catch (e) { fail("rdpFrame#1", e); }
+
+  // 4) Input proof: Ctrl+Esc opens Start, capture, Escape closes it.
+  log("4. Input test: Ctrl+Esc (open Start) -> frame -> Escape");
+  try {
+    await rdpChord("Ctrl+Esc");
+    await new Promise((s) => setTimeout(s, 1500));
+    const f2 = await rdpFrame();
+    writeFileSync("/tmp/cc-rdp-shot2.png", Buffer.from(f2.png, "base64"));
+    console.log(`   saved /tmp/cc-rdp-shot2.png  ${f2.width}x${f2.height}`);
+    await rdpChord("Escape");
+    console.log("   pressed Escape to close Start");
+  } catch (e) { fail("input test", e); }
+
+  // 5) Status sanity.
+  log("5. Status");
+  try {
+    const s = await rdpStatus();
+    console.log("  ", JSON.stringify(s));
+  } catch (e) { fail("rdpStatus", e); }
+} finally {
+  await rdpShutdown().catch(() => {});
 }
 
-// 4) screenshot (baseline)
-log("4. Screenshot (baseline)");
-try {
-  const shot = await vScreenshot();
-  const path = "/tmp/cc-shot-1.png";
-  writeFileSync(path, Buffer.from(shot.png, "base64"));
-  console.log(`saved ${path}  ${shot.width}x${shot.height}  (${Math.round(shot.png.length * 0.75 / 1024)} KB)`);
-} catch (e) {
-  console.log("screenshot FAILED:", e.message);
-  process.exit(1);
-}
-
-// 5) ui_tree
-log("5. UI Automation tree (first 15 elements)");
-try {
-  const els = await vUiTree(60);
-  const arr = Array.isArray(els) ? els : [];
-  console.log(`got ${arr.length} elements; sample:`);
-  for (const e of arr.slice(0, 15)) console.log("  -", JSON.stringify(e));
-} catch (e) {
-  console.log("ui_tree FAILED:", e.message);
-}
-
-// 6) keyboard input (non-destructive: open Start, screenshot, close)
-log("6. Input test: press Win, screenshot, press Esc");
-try {
-  await vKeys("Win");
-  await new Promise((s) => setTimeout(s, 1200));
-  const shot2 = await vScreenshot();
-  writeFileSync("/tmp/cc-shot-2.png", Buffer.from(shot2.png, "base64"));
-  console.log("saved /tmp/cc-shot-2.png after Win press", `${shot2.width}x${shot2.height}`);
-  await vKeys("Escape");
-  console.log("pressed Escape to close Start");
-} catch (e) {
-  console.log("input test FAILED:", e.message);
-}
-
-log("DONE");
+log(failed ? "DONE (with failures above)" : "DONE — all steps passed");
+console.log("Inspect /tmp/cc-rdp-shot.png (desktop, no human present) and /tmp/cc-rdp-shot2.png (Start menu).");
+process.exit(failed ? 1 : 0);
