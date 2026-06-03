@@ -1,6 +1,15 @@
 # STATUS — resume here
 
 **Last updated:** 2026-06-02
+
+> **Parallel track — Control Panel GUI & Keychain credentials (branch `feat/control-panel-gui`).**
+> A native macOS app (`gui/Claude-Control.app`) + Keychain-backed per-target RDP passwords resolved at
+> connect time, plus a per-session state dir (`status.json` + `frame.png`) the app reads to show every
+> live session's status and screen. Phases 1–3 built, unit-tested, app compiles. See
+> [`docs/superpowers/specs/2026-06-02-control-panel-gui-design.md`](superpowers/specs/2026-06-02-control-panel-gui-design.md)
+> and [`docs/superpowers/plans/2026-06-02-control-panel-gui.md`](superpowers/plans/2026-06-02-control-panel-gui.md).
+> Set a password: `node scripts/creds.mjs set <host> <user>` or in the app. Build the app: `bash gui/build.sh`.
+
 **For a fresh Claude session:** read [`README.md`](../README.md) "▶ RESUME HERE" first (it has the exact
 next command), then this file, then the spec and plan:
 - [`docs/superpowers/specs/2026-06-01-rdp-client-remote-control-design.md`](superpowers/specs/2026-06-01-rdp-client-remote-control-design.md)

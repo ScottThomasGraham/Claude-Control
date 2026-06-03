@@ -42,6 +42,31 @@ Claude-Control is an **MCP server** (Node/TypeScript) that lets Claude operate a
 - **SSH plane (speed)** — the OS `ssh`/`scp` for fast headless work: `run`, `upload`, `download`, the optional TIA Openness accelerator, and the one-time RDP-enable.
 - **Optional UIA accelerator** (off by default; `CLAUDE_CONTROL_UIA=1`) — for dense enterprise UIs, runs a transient one-shot UI-Automation walk *inside* the live RDP session and cleans up. Vision-first otherwise.
 
+## Control Panel GUI & credentials
+
+The RDP/NLA password can't use an SSH key, and the MCP server's environment is frozen at launch — so the password is supplied out-of-band. Two ways, both store it in the **macOS Keychain** (OS-encrypted, never a plaintext file):
+
+```bash
+# Terminal: store the password once per target (hidden prompt)
+node scripts/creds.mjs set 100.73.195.110 uksti
+node scripts/creds.mjs get 100.73.195.110 uksti   # -> "set (hidden)"
+```
+
+Or use the **Control Panel app** — a native macOS window (`gui/`), built with:
+
+```bash
+bash gui/build.sh          # -> gui/dist/Claude-Control.app  (icon + binary, no extra toolchain)
+open gui/dist/Claude-Control.app
+```
+
+It shows **every live session at once** (each Claude Code session connects its own target, fully isolated) with a status dot — 🟢 working/connecting · 🟡 idle · 🔴 error · ⚪ stopped — a live screen preview, and a password field that saves to the same Keychain target.
+
+**At connect time** the server resolves the password as: `CLAUDE_CONTROL_RDP_PASSWORD` env override → Keychain entry for `<user>@<host>` → a clear error telling you to set it. No Claude restart is needed after saving.
+
+**Contracts (how the pieces talk):**
+- Keychain — service `claude-control-rdp`, account `<user>@<host>` (shared by `src/creds.ts`, `scripts/creds.mjs`, and the GUI).
+- State dir — `~/Library/Application Support/claude-control/sessions/<pid>-<host>/{status.json, frame.png}`; the server writes it (`src/state.ts`), the GUI polls it. Local I/O only, no model tokens.
+
 ## Status
 
 | Layer | State |
