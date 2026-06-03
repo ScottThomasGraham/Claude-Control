@@ -88,7 +88,7 @@ export async function rdpConnect(): Promise<RdpStatus> {
     if (!child) spawnSidecar();
     lastConnectArgs = {
       host, port: config.rdpPort, username: user,
-      password: requireRdpPassword(),
+      password: requireRdpPassword({ host, user }),
       width: config.rdpWidth, height: config.rdpHeight,
     };
     const r = await call("connect", lastConnectArgs, 45_000);

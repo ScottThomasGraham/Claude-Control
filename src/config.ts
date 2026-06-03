@@ -9,6 +9,7 @@
  */
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { getCredential } from "./creds.js";
 
 export type TargetOs = "windows" | "macos";
 
@@ -79,14 +80,24 @@ export function requireTarget(): { host: string; user: string } {
   return { host: config.host, user: config.user };
 }
 
-/** The RDP password — env only, never persisted. Throws a clear error if missing. */
-export function requireRdpPassword(): string {
-  const pw = process.env.CLAUDE_CONTROL_RDP_PASSWORD;
-  if (!pw) {
-    throw new Error(
-      "RDP password not set. Export CLAUDE_CONTROL_RDP_PASSWORD (never written to disk) " +
-        "before connecting — RDP/NLA cannot use an SSH key.",
-    );
+/**
+ * The RDP password — env override → macOS Keychain (per target) → throw.
+ * Never persisted to a file. The env var stays as an explicit override for CI /
+ * power users; otherwise the Control Panel GUI / `creds.mjs` stores it in the
+ * Keychain and it is looked up here at connect time.
+ */
+export function requireRdpPassword(target?: { host?: string; user?: string }): string {
+  const env = process.env.CLAUDE_CONTROL_RDP_PASSWORD;
+  if (env) return env;
+  const host = target?.host ?? config.host;
+  const user = target?.user ?? config.user;
+  if (host && user) {
+    const pw = getCredential(host, user);
+    if (pw) return pw;
   }
-  return pw;
+  throw new Error(
+    `RDP password not set for ${user ?? "?"}@${host ?? "?"}. ` +
+      "Open Claude-Control and save the password for this target, " +
+      "or export CLAUDE_CONTROL_RDP_PASSWORD.",
+  );
 }
