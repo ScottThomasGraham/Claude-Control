@@ -17,10 +17,17 @@ import { runRemote, scpUpload, type ExecResult } from "./ssh.js";
 import {
   vScreenshot, vMove, vClick, vScroll, vDrag, vMouseDown, vMouseUp, vType, vKeys,
 } from "./visual.js";
-import { rdpConnect, rdpStatus } from "./rdp.js";
+import { rdpConnect, rdpStatus, rdpFrame } from "./rdp.js";
 import { ensureRdpEnabled } from "./rdpEnable.js";
 import { uiaTree, uiaFind, uiaListWindows, uiaFocusWindow } from "./uia.js";
 import { tiaCall } from "./tia.js";
+import { SessionWriter } from "./state.js";
+
+// Session state published for the Control Panel GUI (status + ~1fps frame pump).
+let session: SessionWriter | null = null;
+let inFlight = 0;
+let frameTimer: ReturnType<typeof setInterval> | null = null;
+const nowMs = (): number => Date.now();
 
 type Content = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
 type ToolResult = { content: Content[]; isError?: boolean };
@@ -31,10 +38,15 @@ const fail = (t: string): ToolResult => ({ content: [{ type: "text", text: t }],
 /** Wrap a handler so thrown errors become clean tool errors instead of crashing the server. */
 function tool<A>(fn: (args: A) => Promise<ToolResult>) {
   return async (args: A): Promise<ToolResult> => {
+    if (++inFlight === 1) session?.setState("working", nowMs());
     try {
       return await fn(args);
     } catch (e) {
-      return fail(`Error: ${e instanceof Error ? e.message : String(e)}`);
+      const msg = e instanceof Error ? e.message : String(e);
+      session?.setError(msg, nowMs());
+      return fail(`Error: ${msg}`);
+    } finally {
+      if (--inFlight === 0 && session) session.setState("idle", nowMs());
     }
   };
 }
@@ -81,6 +93,18 @@ export function buildServer(): McpServer {
       }
       const en = await ensureRdpEnabled();
       const st = await rdpConnect();
+      // Begin a GUI-visible session: status + ~1fps frame pump.
+      session?.dispose();
+      session = new SessionWriter(`${process.pid}-${a.host}`, a.host, a.user, nowMs());
+      session.setState("idle", nowMs());
+      if (frameTimer) clearInterval(frameTimer);
+      frameTimer = setInterval(() => {
+        if (!session) return;
+        rdpFrame()
+          .then((f) => session && session.writeFrame(Buffer.from(f.png, "base64"), nowMs()))
+          .catch(() => session && session.heartbeat(nowMs()));
+      }, 1000);
+      frameTimer.unref?.();
       return text(
         `Connected to ${a.user}@${a.host} (windows)\n${r.stdout.trim()}\n` +
           `RDP: ${en.detail}\nRDP session live at ${st.width}x${st.height}.`,
