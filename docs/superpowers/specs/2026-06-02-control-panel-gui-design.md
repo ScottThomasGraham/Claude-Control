@@ -28,8 +28,11 @@ We want a small, robust desktop GUI that:
 - **Credentials live in the macOS Keychain**, keyed per target. The OS-encrypted Keychain is not a
   file, so this honors the project's never-store-passwords rule. The server looks the password up at
   **connect time** (not launch), so no Claude restart is ever needed after setup.
-- **GUI form factor: standalone window app (Tauri / Rust)** — reuses the sidecar's Rust toolchain,
-  cross-platform, room for a list + detail layout.
+- **GUI form factor: standalone window app, native Swift/AppKit** — a self-contained `.app` bundle
+  built with the system `swiftc` (no Tauri/npm/webview install), giving a real Dock icon and a
+  list + detail window. (Brainstorming said "Tauri/Rust"; switched to Swift/AppKit because it builds
+  reliably from the Command Line Tools already on this Mac and yields a true native `.app` + `.icns`.
+  macOS-only, which matches where the controller runs.)
 - **Window layout: A · List + detail** — left rail of live sessions and saved targets; right pane
   with the selected session's live preview, credential field, and controls.
 - **App icon: B · Targeting cursor** — corner brackets framing a control cursor, matte monochrome
@@ -100,26 +103,27 @@ Each MCP server instance owns a `sessionId` (`<pid>-<host>`), and a session dire
   no-token-polling rule, which is about Claude-driven polling).
 - Cleanup of the session dir on graceful exit; the GUI prunes stale dirs on launch.
 
-### 3. Control Panel GUI — `gui/` (Tauri app: Rust core + web frontend)
+### 3. Control Panel GUI — `gui/` (native Swift/AppKit `.app`)
 
-- **Sessions roster (Layout A):** watches `stateRoot/sessions/` (fs-watch + poll fallback), renders
-  the left rail (live sessions grouped above saved-but-idle targets) and a detail pane for the
-  selected session: large live preview (`frame.png`, auto-refreshing), target info, password field,
-  and controls.
+- **Sessions roster (Layout A):** polls `stateRoot/sessions/` (~1s timer; simple and robust), renders
+  the left rail (`NSTableView` of live sessions grouped above saved-but-idle targets) and a detail
+  pane for the selected session: large live preview (`NSImageView` reloading `frame.png`), target
+  info, a password field (`NSSecureTextField`), and a Save button.
 - **Status glyphs:** green = connected/working, amber = idle, grey = stopped, red = error; stale
   (heartbeat older than ~10s) renders grey with a "(no response)" note.
-- **Credential management:** add / edit / remove saved targets. The Rust core writes to the **same
-  Keychain scheme** as `creds.ts` (via the `keyring` crate or shelling to `security`). The scheme is
-  the shared contract — documented in both modules.
+- **Credential management:** add / edit / remove saved targets. The Swift app writes to the **same
+  Keychain scheme** as `creds.ts` by shelling out to `/usr/bin/security` (identical command surface,
+  so node + GUI agree). The scheme is the shared contract — documented in both places.
 - **Disconnect (optional, Phase 3):** writes a `command` file into the session dir that the MCP
   server watches; keeps the GUI view-only otherwise. Out of scope for Phase 1–2.
-- **Icon B** wired as the window + Dock + bundle icon.
+- **Icon B** wired as the bundle/Dock/window icon (`AppIcon.icns`).
 
-### 4. Icon asset — `gui/icons/`
+### 4. Icon asset — `gui/`
 
-Icon B authored as SVG, exported to a full `.icns` (all required sizes) + PNGs via a small build
-script (`sips`/`iconutil` on macOS). Wired into the Tauri bundle config so there is **never** a
-blank/default icon. Matte monochrome squircle, light glyph, single green accent dot.
+Icon B (targeting brackets + control cursor, matte monochrome squircle + green accent) is drawn
+programmatically with CoreGraphics by `gui/make-icon.swift` (no external SVG rasterizer needed):
+it renders every required size into `AppIcon.iconset/`, then `iconutil -c icns` produces
+`AppIcon.icns`, bundled into `Resources/`. There is **never** a blank/default icon.
 
 ## Keychain access & headless reads (gotcha)
 
