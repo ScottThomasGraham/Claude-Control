@@ -23,3 +23,4 @@
 .env.*
 /scratch
 .superpowers/
+gui/dist/
