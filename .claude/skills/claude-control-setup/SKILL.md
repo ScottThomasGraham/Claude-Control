@@ -80,3 +80,13 @@ The pasted-command path (`provision-cmd`) remains the fallback when the user can
 - Never write the user's Windows password to any file, the repo, or chat. SSH auth is key-only.
 - If a target is shared with you already provisioned, you can skip to step 5.
 - Full reference: `docs/SETUP.md`.
+
+---
+<!-- nyx-kb:start -->
+
+## 🔗 Related
+- 🗺️ Domain: [[_Knowledge/🤖 AI Tooling (Nyx)|🤖 AI Tooling (Nyx)]]
+- 🏠 Project hub: [[Claude-Control/README|Claude-Control]]
+- 🔗 Related: [[Claude-Control/docs/superpowers/plans/2026-06-02-control-panel-gui|Control Panel & Credential GUI — Impleme]] · [[Claude-Control/docs/research/2026-05-30-windows-ssh|Research: Windows remote management over]] · [[Claude-Control/docs/superpowers/plans/2026-06-01-rdp-client-plane|RDP-Client Plane Implementation Plan]]
+
+<!-- nyx-kb:end -->

@@ -160,3 +160,13 @@ so capture + input work with no human present.
 Deleted on 2026-06-01: `windows/helper.ps1`, `windows/bootstrap.ps1`.
 The `bootstrap` MCP tool was also removed (28 tools, down from 29).
 Prior run logs and validation records are in `git log` on `main` pre-2026-06-01.
+
+---
+<!-- nyx-kb:start -->
+
+## 🔗 Related
+- 🗺️ Domain: [[_Knowledge/🤖 AI Tooling (Nyx)|🤖 AI Tooling (Nyx)]]
+- 🏠 Project hub: [[Claude-Control/README|Claude-Control]]
+- 🔗 Related: [[Freelancer/STATUS|STATUS — single source of truth]] · [[Claude-Control/docs/SETUP|Setup & Deployment]]
+
+<!-- nyx-kb:end -->

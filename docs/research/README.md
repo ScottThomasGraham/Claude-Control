@@ -10,3 +10,13 @@ sources (linked inline) into decisions for the [design spec](../superpowers/spec
 | [UIA agent](2026-05-30-uia-agent.md) | Semantic perception? | Rust + windows-rs, per-monitor DPI-aware; **Scheduled Task at-logon** to run in the interactive session; ship snapshots over **loopback TCP through the SSH tunnel**. |
 | [Distribution](2026-05-30-distribution.md) | Reliable + distributable? | `cargo-dist`, macOS universal2 + Homebrew tap (notarized), Windows agent as bare signed exe. 3-crate workspace. MIT OR Apache-2.0. |
 | [OCR/perception](2026-05-30-ocr-perception.md) | Pixels-only legend? | **Apple Vision** via `objc2-vision` (built-in, best accuracy) + `ocrs` fallback. Defer element detection to the LLM. |
+
+---
+<!-- nyx-kb:start -->
+
+## 🔗 Related
+- 🗺️ Domain: [[_Knowledge/🤖 AI Tooling (Nyx)|🤖 AI Tooling (Nyx)]]
+- 🏠 Project hub: [[Claude-Control/README|Claude-Control]]
+- 🔗 Related: [[Claude-Control/.claude/skills/claude-control-setup/SKILL|Claude-Control — guided setup]] · [[Claude-Control/docs/tia-recipes|TIA Portal recipes + Phase-0 capability ]] · [[Claude-Control/docs/research/2026-05-30-ocr-perception|Research: perception layer (OCR + elemen]]
+
+<!-- nyx-kb:end -->

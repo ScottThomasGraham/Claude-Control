@@ -101,3 +101,13 @@ _TBW = to be written when the phase is approved for execution._
 bootstrap <host>` brings up SSH+RDP and silently installs the UIA agent; the agent can then run
 headless commands, see the screen, click/type, and read a semantic element legend — with a live
 viewer to watch and take over, full audit logging, and a clean uninstall.
+
+---
+<!-- nyx-kb:start -->
+
+## 🔗 Related
+- 🗺️ Domain: [[_Knowledge/🤖 AI Tooling (Nyx)|🤖 AI Tooling (Nyx)]]
+- 🏠 Project hub: [[Claude-Control/README|Claude-Control]]
+- 🔗 Related: [[Claude-Control/docs/superpowers/plans/2026-06-02-control-panel-gui|Control Panel & Credential GUI — Impleme]] · [[Claude-Control/docs/tia-recipes|TIA Portal recipes + Phase-0 capability ]] · [[Claude-Control/docs/superpowers/plans/2026-05-30-phase-1-ssh-fast-path|Phase 1 — SSH Fast Path Implementation P]]
+
+<!-- nyx-kb:end -->

@@ -65,3 +65,13 @@ The **goals**, the **tri-channel idea** (headless / visual / semantic), the **se
 (loopback-only helper, explicit one-time bootstrap, clean uninstall). The
 [research briefs](../research/) on Windows SSH, UI Automation, and OCR remain directly relevant; the
 IronRDP and Rust-distribution briefs are now historical context.
+
+---
+<!-- nyx-kb:start -->
+
+## 🔗 Related
+- 🗺️ Domain: [[_Knowledge/🤖 AI Tooling (Nyx)|🤖 AI Tooling (Nyx)]]
+- 🏠 Project hub: [[Claude-Control/README|Claude-Control]]
+- 🔗 Related: [[Claude-Control/docs/superpowers/specs/2026-05-30-claude-control-design|Claude-Control — Design Spec]] · [[Claude-Control/docs/superpowers/specs/2026-06-02-control-panel-gui-design|Claude-Control — Control Panel & Credent]] · [[Claude-Control/docs/superpowers/specs/2026-05-31-remote-tia-control-design|Remote TIA Portal control — Openness API]]
+
+<!-- nyx-kb:end -->

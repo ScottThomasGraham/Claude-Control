@@ -105,3 +105,13 @@ Publish `claude-control-mcp` so friends can `npx -y claude-control-mcp` for the 
 
 Multi-host fleet registry, a GUI installer, WinRM/MDM provisioning paths, and npm publishing are
 not built now (npm publish noted as optional follow-up).
+
+---
+<!-- nyx-kb:start -->
+
+## 🔗 Related
+- 🗺️ Domain: [[_Knowledge/🤖 AI Tooling (Nyx)|🤖 AI Tooling (Nyx)]]
+- 🏠 Project hub: [[Claude-Control/README|Claude-Control]]
+- 🔗 Related: [[Claude-Control/docs/superpowers/specs/2026-06-02-control-panel-gui-design|Claude-Control — Control Panel & Credent]] · [[Claude-Control/docs/SETUP|Setup & Deployment]] · [[Claude-Control/docs/superpowers/specs/2026-06-01-rdp-client-remote-control-design|Design — RDP-Client Remote Control (zero]]
+
+<!-- nyx-kb:end -->

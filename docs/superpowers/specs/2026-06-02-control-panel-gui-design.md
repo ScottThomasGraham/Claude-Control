@@ -168,3 +168,13 @@ plan handles it explicitly rather than discovering it live.
   optional control).
 - Windows/Linux GUI parity (Tauri keeps the door open; not built now).
 - The persistent shared-session daemon (explicitly rejected — kills concurrent multi-target).
+
+---
+<!-- nyx-kb:start -->
+
+## 🔗 Related
+- 🗺️ Domain: [[_Knowledge/🤖 AI Tooling (Nyx)|🤖 AI Tooling (Nyx)]]
+- 🏠 Project hub: [[Claude-Control/README|Claude-Control]]
+- 🔗 Related: [[Claude-Control/docs/superpowers/plans/2026-06-02-control-panel-gui|Control Panel & Credential GUI — Impleme]] · [[Claude-Control/docs/superpowers/specs/2026-05-31-distribution-design|Claude-Control — Distribution & One-Comm]] · [[Claude-Control/docs/architecture/implemented-architecture|Implemented architecture (and why it cha]]
+
+<!-- nyx-kb:end -->

@@ -772,3 +772,13 @@ echo "built $APP"
 - Spec coverage: creds (T1–3), connect-time resolution (T2), state dir + status + frame (T4–5), multi-session (sessionId = `pid-host`, GUI lists all), Layout A (T7), icon B (T6,T8), Keychain scheme shared by node+Swift+CLI, env override retained. Disconnect = out of scope (spec Phase 3 optional) — omitted deliberately.
 - Headless-read gotcha handled via `security -A` in both `creds.ts` and the GUI.
 - Type consistency: `StatusRecord` fields match the Swift `Session` decoder keys and the GUI's `dotColor` states (`connecting|working|idle|stopped|error`).
+
+---
+<!-- nyx-kb:start -->
+
+## 🔗 Related
+- 🗺️ Domain: [[_Knowledge/🤖 AI Tooling (Nyx)|🤖 AI Tooling (Nyx)]]
+- 🏠 Project hub: [[Claude-Control/README|Claude-Control]]
+- 🔗 Related: [[Claude-Control/.claude/skills/claude-control-setup/SKILL|Claude-Control — guided setup]] · [[Claude-Control/docs/superpowers/specs/2026-06-02-control-panel-gui-design|Claude-Control — Control Panel & Credent]] · [[Claude-Control/docs/superpowers/plans/2026-05-30-claude-control-roadmap|Claude-Control — Implementation Roadmap]]
+
+<!-- nyx-kb:end -->

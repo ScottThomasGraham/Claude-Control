@@ -835,3 +835,13 @@ git add -A && git commit -m "test: phase-1 e2e smoke script"
 
 **Naming consistency:** `SshSession::{connect_with_agent, exec, push, pull}`, `SessionManager::{insert_ssh,
 ssh_mut, remove, state}`, `client::call`, `daemon::spawn` — used identically across tasks. ✓
+
+---
+<!-- nyx-kb:start -->
+
+## 🔗 Related
+- 🗺️ Domain: [[_Knowledge/🤖 AI Tooling (Nyx)|🤖 AI Tooling (Nyx)]]
+- 🏠 Project hub: [[Claude-Control/README|Claude-Control]]
+- 🔗 Related: [[Claude-Control/docs/SETUP|Setup & Deployment]] · [[Claude-Control/docs/research/2026-05-30-windows-ssh|Research: Windows remote management over]] · [[Claude-Control/docs/superpowers/plans/2026-05-30-claude-control-roadmap|Claude-Control — Implementation Roadmap]]
+
+<!-- nyx-kb:end -->

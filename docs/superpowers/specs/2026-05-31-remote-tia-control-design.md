@@ -122,3 +122,13 @@ hardware**. It:
 - **Live:** deferred to Phase 0/3 on the production TIA server, per the owner's plan.
 </content>
 </invoke>
+
+---
+<!-- nyx-kb:start -->
+
+## 🔗 Related
+- 🗺️ Domain: [[_Knowledge/🤖 AI Tooling (Nyx)|🤖 AI Tooling (Nyx)]]
+- 🏠 Project hub: [[Claude-Control/README|Claude-Control]]
+- 🔗 Related: [[Claude-Control/docs/tia-recipes|TIA Portal recipes + Phase-0 capability ]] · [[Claude-Control/docs/superpowers/specs/2026-06-01-rdp-client-remote-control-design|Design — RDP-Client Remote Control (zero]] · [[Claude-Control/docs/architecture/implemented-architecture|Implemented architecture (and why it cha]]
+
+<!-- nyx-kb:end -->

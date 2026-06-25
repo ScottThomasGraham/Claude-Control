@@ -11,3 +11,13 @@ Nyx is Scott's AI teammate — named for the Greek goddess of the night.
 Nyx lives on **Neo** (Scott's MacBook) and works through Discord: each channel is a repo, each thread is a conversation with her running real Claude Code on the Max plan — read, write, run, ship, full-auto.
 
 > *"I am the night you build your future in."* — Nyx
+
+---
+<!-- nyx-kb:start -->
+
+## 🔗 Related
+- 🗺️ Domain: [[_Knowledge/🤖 AI Tooling (Nyx)|🤖 AI Tooling (Nyx)]]
+- 🏠 Project hub: [[Claude-Control/README|Claude-Control]]
+- 🔗 Related: [[General/Nyx|Nyx 🌙]] · [[neo-bridge/Nyx|Nyx 🌙]] · [[cb/Nyx|Nyx 🌙]]
+
+<!-- nyx-kb:end -->

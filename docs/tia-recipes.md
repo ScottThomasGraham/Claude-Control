@@ -61,3 +61,13 @@ equivalent) → `click`. After accepting once, subsequent attaches are silent.
 
 _(Add concrete, verified recipes here as Phase 0/2 progress.)_
 </content>
+
+---
+<!-- nyx-kb:start -->
+
+## 🔗 Related
+- 🗺️ Domain: [[_Knowledge/🤖 AI Tooling (Nyx)|🤖 AI Tooling (Nyx)]]
+- 🏠 Project hub: [[Claude-Control/README|Claude-Control]]
+- 🔗 Related: [[Claude-Control/docs/superpowers/specs/2026-05-31-remote-tia-control-design|Remote TIA Portal control — Openness API]] · [[Claude-Control/docs/superpowers/plans/2026-05-30-claude-control-roadmap|Claude-Control — Implementation Roadmap]] · [[Claude-Control/docs/superpowers/plans/2026-05-30-phase-1-ssh-fast-path|Phase 1 — SSH Fast Path Implementation P]]
+
+<!-- nyx-kb:end -->

@@ -121,3 +121,12 @@ docs/             STATUS.md (resume runbook) + superpowers/specs + superpowers/p
 - **No passwords on disk, ever.** SSH uses your key; the RDP password comes only from the environment / a hidden prompt and lives in process memory.
 - RDP TLS currently uses a permissive cert verifier (standard for self-signed RDP hosts) — flag for any production hardening pass.
 - License: MIT OR Apache-2.0.
+
+---
+<!-- nyx-kb:start -->
+
+## 🔗 Related
+- 🗺️ Domain: [[_Knowledge/🤖 AI Tooling (Nyx)|🤖 AI Tooling (Nyx)]]
+- 🔗 Related: [[Claude-Control/docs/STATUS|STATUS — resume here]] · [[Claude-Control/docs/superpowers/plans/2026-06-02-control-panel-gui|Control Panel & Credential GUI — Impleme]] · [[Claude-Control/docs/superpowers/specs/2026-06-02-control-panel-gui-design|Claude-Control — Control Panel & Credent]]
+
+<!-- nyx-kb:end -->
