@@ -52,3 +52,13 @@ moot. Keep **ocrs as a portable fallback** (pure-Rust, bundle the two small mode
 hosts or to avoid OS coupling. Skip Tesseract. **Defer element detection to the LLM:** feed it the
 screenshot + OCR legend (text + center coords) and let visual reasoning identify clickable widgets.
 Add a CV/OmniParser-style detector only if icon-only targeting proves unreliable in practice.
+
+---
+<!-- nyx-kb:start -->
+
+## 🔗 Related
+- 🗺️ Domain: [[_Knowledge/🤖 AI Tooling (Nyx)|🤖 AI Tooling (Nyx)]]
+- 🏠 Project hub: [[Claude-Control/README|Claude-Control]]
+- 🔗 Related: [[Claude-Control/docs/research/2026-05-30-distribution|Research: distribution, packaging, CI, r]] · [[Claude-Control/docs/tia-recipes|TIA Portal recipes + Phase-0 capability ]] · [[Claude-Control/docs/research/README|Research notes]]
+
+<!-- nyx-kb:end -->

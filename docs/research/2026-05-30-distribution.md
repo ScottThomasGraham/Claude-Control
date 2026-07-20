@@ -70,3 +70,13 @@ Developer account**, sign with **Developer ID** + notarize macOS; sign the Windo
 **3-crate workspace** (`protocol`, `controller`, `agent`) with the agent's Windows deps target-gated
 and `default-members` excluding it on macOS. License **`MIT OR Apache-2.0`**, preserve IronRDP's
 notices, enforce with `cargo deny` + clippy/fmt gates.
+
+---
+<!-- nyx-kb:start -->
+
+## 🔗 Related
+- 🗺️ Domain: [[_Knowledge/🤖 AI Tooling (Nyx)|🤖 AI Tooling (Nyx)]]
+- 🏠 Project hub: [[Claude-Control/README|Claude-Control]]
+- 🔗 Related: [[Claude-Control/docs/research/2026-05-30-uia-agent|Research: Windows UIA helper agent (the ]] · [[Claude-Control/docs/research/2026-05-30-ocr-perception|Research: perception layer (OCR + elemen]] · [[Claude-Control/docs/research/2026-05-30-windows-ssh|Research: Windows remote management over]]
+
+<!-- nyx-kb:end -->

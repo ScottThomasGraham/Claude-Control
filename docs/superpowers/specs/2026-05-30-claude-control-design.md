@@ -289,3 +289,13 @@ Each phase ends with an e2e smoke test against the owner's Windows PC.
 
 Working names: repo **Claude-Control**, controller binary **`ctl`**, agent
 **`claude-control-agent.exe`**. All provisional — easy to rename before first release.
+
+---
+<!-- nyx-kb:start -->
+
+## 🔗 Related
+- 🗺️ Domain: [[_Knowledge/🤖 AI Tooling (Nyx)|🤖 AI Tooling (Nyx)]]
+- 🏠 Project hub: [[Claude-Control/README|Claude-Control]]
+- 🔗 Related: [[claude-rdp/docs/superpowers/specs/2026-05-30-rdp-control-design|Claude-RDP — Design Spec]] · [[Claude-Control/docs/superpowers/specs/2026-06-01-rdp-client-remote-control-design|Design — RDP-Client Remote Control (zero]] · [[Claude-Control/docs/research/2026-05-30-uia-agent|Research: Windows UIA helper agent (the ]]
+
+<!-- nyx-kb:end -->

@@ -90,3 +90,13 @@ from the interactive desktop — so the UIA helper must *not* run as a plain ser
 **logon-triggered Scheduled Task** (or a SYSTEM launcher using `WTSQueryUserToken` +
 `CreateProcessAsUser`) to spawn it into the active session. Keep RDP separate for GUI work; either
 channel can enable the other, so only one needs a single manual bootstrap.
+
+---
+<!-- nyx-kb:start -->
+
+## 🔗 Related
+- 🗺️ Domain: [[_Knowledge/🤖 AI Tooling (Nyx)|🤖 AI Tooling (Nyx)]]
+- 🏠 Project hub: [[Claude-Control/README|Claude-Control]]
+- 🔗 Related: [[Claude-Control/docs/superpowers/plans/2026-06-01-rdp-client-plane|RDP-Client Plane Implementation Plan]] · [[Claude-Control/docs/research/2026-05-30-uia-agent|Research: Windows UIA helper agent (the ]] · [[Claude-Control/docs/superpowers/plans/2026-05-30-phase-1-ssh-fast-path|Phase 1 — SSH Fast Path Implementation P]]
+
+<!-- nyx-kb:end -->

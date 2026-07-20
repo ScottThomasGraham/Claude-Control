@@ -169,3 +169,13 @@ as optional accelerator" philosophy.
 - IPC transport choice (stdio length-prefixed JSON vs UDS) and frame transfer encoding (raw vs PNG;
   push-latest vs pull-on-demand).
 - Default negotiated resolution / DPI and how `screenshot` reports it.
+
+---
+<!-- nyx-kb:start -->
+
+## 🔗 Related
+- 🗺️ Domain: [[_Knowledge/🤖 AI Tooling (Nyx)|🤖 AI Tooling (Nyx)]]
+- 🏠 Project hub: [[Claude-Control/README|Claude-Control]]
+- 🔗 Related: [[claude-rdp/docs/superpowers/specs/2026-05-30-rdp-control-design|Claude-RDP — Design Spec]] · [[Claude-Control/docs/superpowers/specs/2026-05-30-claude-control-design|Claude-Control — Design Spec]] · [[Claude-Control/docs/superpowers/specs/2026-05-31-remote-tia-control-design|Remote TIA Portal control — Openness API]]
+
+<!-- nyx-kb:end -->

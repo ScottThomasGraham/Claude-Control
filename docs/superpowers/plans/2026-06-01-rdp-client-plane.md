@@ -1382,3 +1382,13 @@ git commit -m "chore: delete in-session helper; STATUS reflects RDP-client model
 **Placeholder scan:** The Rust `TODO(impl)` markers in Task 10 are deliberate and bounded — they are the one component whose exact API must be confirmed against the pinned IronRDP version at implementation time (flagged in spec §10), and Step 5 of Task 10 closes them. Every TS/JS/PowerShell unit is complete and runnable. No other placeholders.
 
 **Type consistency:** `KeyEvent` (keymap.ts) is consumed by rdp.ts and matched by the sidecar's `keys` handler. Frame shape `{png,width,height,ageMs}` is identical across mock-sidecar, rdp.ts `Frame`, and the Rust `cmd_frame`. `RdpStatus` fields match across rdp.ts and the Rust `cmd_status`. Pointer command args `{x,y,action,button,wheel}` match between rdp.ts `pointer()` and the mock/real sidecar. `connect` args `{host,port,username,password,width,height}` match across rdp.ts, mock, and Rust `cmd_connect`. ✓
+
+---
+<!-- nyx-kb:start -->
+
+## 🔗 Related
+- 🗺️ Domain: [[_Knowledge/🤖 AI Tooling (Nyx)|🤖 AI Tooling (Nyx)]]
+- 🏠 Project hub: [[Claude-Control/README|Claude-Control]]
+- 🔗 Related: [[Claude-Control/docs/research/2026-05-30-windows-ssh|Research: Windows remote management over]] · [[Claude-Control/docs/superpowers/specs/2026-06-01-rdp-client-remote-control-design|Design — RDP-Client Remote Control (zero]] · [[Claude-Control/docs/superpowers/plans/2026-06-02-control-panel-gui|Control Panel & Credential GUI — Impleme]]
+
+<!-- nyx-kb:end -->

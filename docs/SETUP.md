@@ -124,3 +124,13 @@ powershell -ExecutionPolicy Bypass -File C:\ProgramData\ClaudeControl\bootstrap.
 
 This removes the helper task, files, and the port reservation. SSH and the firewall rule remain (you
 provisioned those deliberately) — remove them by hand if desired.
+
+---
+<!-- nyx-kb:start -->
+
+## 🔗 Related
+- 🗺️ Domain: [[_Knowledge/🤖 AI Tooling (Nyx)|🤖 AI Tooling (Nyx)]]
+- 🏠 Project hub: [[Claude-Control/README|Claude-Control]]
+- 🔗 Related: [[Claude-Control/docs/superpowers/plans/2026-05-30-phase-1-ssh-fast-path|Phase 1 — SSH Fast Path Implementation P]] · [[Claude-Control/docs/research/2026-05-30-windows-ssh|Research: Windows remote management over]] · [[Claude-Control/docs/superpowers/specs/2026-05-31-distribution-design|Claude-Control — Distribution & One-Comm]]
+
+<!-- nyx-kb:end -->
